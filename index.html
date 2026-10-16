@@ -78,7 +78,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 7-5 · 판 6fd8247 10/16 15:20 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 7-6 · 판 2a9ad93 10/16 15:53 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -161,15 +161,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=6fd8247-1016062053"></script>
+<script src="slope.js?v=2a9ad93-1016065310"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 6fd8247-1016062053를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 2a9ad93-1016065310를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = '6fd8247-1016062053';
+const BUILD_ID = '2a9ad93-1016065310';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -513,6 +513,12 @@ function compute() {
   info.cover = GR.coverage(used, b, h);
   info.planeP = planeP; info.planeD = planeD; info.plane = plane;
   info.cells = used.slice(0, 400).map(c => [c.x, c.y, c.z]);
+  // 구간별 경사 (공 쪽 · 가운데 · 홀 쪽 1/3씩) — 정답 재기(한 자리)와 같은 자리끼리 비교하려고 (10/16 15:49 아스팔트: 카메라 평평 vs 정답 내리막 3.6%)
+  info.segs = [0, 1, 2].map(k => {
+    const seg = used.filter(c => { const u = GR.lineOffset(b, h, [c.x, c.y, c.z]).u; return u >= k * L / 3 && u < (k + 1) * L / 3; });
+    const f = seg.length >= 8 ? GR.fitPlane(seg) : null;
+    return f ? { along: (f.a * ux + f.b * uz) * 100, side: (f.a * -uz + f.b * ux) * 100, n: seg.length } : null;
+  });
   info.sides = [-BAND, BAND];
   // 보정 전 값(정답 재기에서 보정값을 쌓을 때 이걸 쓴다 — 보정한 값으로 쌓으면 보정이 보정을 먹음)
   info.raw = { along: info.alongPct, side: info.breakTo === 'left' ? info.sidePct : -info.sidePct };
@@ -593,7 +599,8 @@ function recordText(i, list) {
     (i.upDiff ? ` · 센서−AR 위(휴대폰 기준) 좌우 ${pctS(i.upDiff[0])} 앞뒤 ${pctS(i.upDiff[2])}` : '') +
     (i.sensor ? ` · 센서 위 기준이면 오르막 ${pctS(i.sensor.along / 100)} · 옆 ${pctS(i.sensor.side / 100)}(오른쪽이 높으면 +)` : '');
   const pts = list.map((m, k) => `${markLabel(k)} ${m.dist.toFixed(1)}m(${m.src})`).join(' / ');
-  return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n${trustText(i)}\n(${calibLine(i)})\n(${meta})\n(${pts})${warns.length ? '\n' + warns.join('\n') : ''}`;
+  const segs = (i.segs || []).map((g, k) => `${['공 쪽', '가운데', '홀 쪽'][k]} ${g ? `오르막 ${pctS(g.along / 100)} · 옆 ${pctS(g.side / 100)}(${g.n}칸)` : '점 모자람'}`).join(' / ');
+  return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n${trustText(i)}\n(${calibLine(i)})\n(구간별(보정 전, 옆은 오른쪽이 높으면 +): ${segs})\n(${meta})\n(${pts})${warns.length ? '\n' + warns.join('\n') : ''}`;
 }
 // 경사의 ± 만큼 옆 경사를 바꿔 보면 겨냥이 어디서 어디까지 달라지나 (컵, 오른쪽 +)
 function puttRange(b, h, plane, i) {
@@ -798,10 +805,10 @@ function lvStats(since) {
 const pctS = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
 function lvStepText() {
   if (lv.phase === 'A' && lv.waitLift) return '다음 자리로 옮겨 주세요 — 휴대폰을 들어 올리면 다시 시작해요';
-  if (lv.phase === 'A') return `① 휴대폰을 라인 위(퍼터 샤프트·자 위)에 <b>화면이 위로, 윗부분이 홀 쪽</b>으로 눕혀 주세요.<br>가만히 두면 1.5초 뒤 저절로 재요.${lv.pairs.length ? ` (${lv.pairs.length + 1}번째 자리)` : ''}`;
+  if (lv.phase === 'A') return `① 휴대폰을 라인 위 <b>${['공 쪽', '가운데', '홀 쪽'][lv.pairs.length] || '다른 자리'}</b>에 <b>화면이 위로, 윗부분이 홀 쪽</b>으로 눕혀 주세요.<br>아스팔트처럼 거친 바닥은 꼭 <b>퍼터 샤프트·자 위</b>에. 가만히 두면 1.5초 뒤 저절로 재요.`;
   if (lv.phase === 'B' && lv.waitLift) return '✓ 쟀어요. 이제 휴대폰을 <b>들어 올려</b> 주세요';
   if (lv.phase === 'B') return '② 같은 자리에 <b>180도 돌려서(윗부분이 공 쪽)</b> 눕혀 주세요. 가만히 두면 저절로 재요.';
-  return '✓ 다 쟀어요. [한 군데 더]로 다른 자리도 재면 더 정확해요';
+  return lv.pairs.length < 3 ? `✓ 쟀어요. [한 군데 더]로 <b>${['공 쪽', '가운데', '홀 쪽'][lv.pairs.length]}</b>도 재 주세요 (공 쪽·가운데·홀 쪽 3군데면 카메라 구간별 값과 비교돼요)` : '✓ 다 쟀어요';
 }
 function lvShow() {
   overlay.classList.remove('show-still'); overlay.classList.add('show-level');
@@ -871,7 +878,7 @@ function lvResult() {
     (i ? ` / 카메라(보정 전): ${upTxt(camAlong)} · 옆 ${sideTxt(camSide)} / 차이 오르막 ${pctS(camAlong - along)} · 옆 ${pctS(camSide - side)} (거리 ${i.dist.toFixed(1)}m, ${i.src} 칸 ${i.nUsed}개)` : '') +
     (i && i.calib ? ` / 보정 후 차이 오르막 ${pctS(fixAlong - along)} · 옆 ${pctS(fixSide - side)}` : '') +
     (sen ? ` / 센서 위 기준 차이 오르막 ${pctS(sen.along - along)} · 옆 ${pctS(sen.side - side)}` : '') +
-    ` / 휴대폰 치우침 앞뒤 ${pctS(by)} · 좌우 ${pctS(bx)}` + lv.pairs.map((p, k) => ` / ${k + 1}번: ${pctS(p.along)}, 옆 ${pctS(p.side)}`).join('');
+    ` / 휴대폰 치우침 앞뒤 ${pctS(by)} · 좌우 ${pctS(bx)}` + lv.pairs.map((p, k) => ` / ${['공 쪽', '가운데', '홀 쪽'][k] || (k + 1) + '번'}: ${pctS(p.along)}, 옆 ${pctS(p.side)}`).join('');
   const list = loadHist();
   if (lv.savedT && list[0] && list[0].t === lv.savedT) list[0].text = text; else { lv.savedT = Date.now(); list.unshift({ t: lv.savedT, text }); }
   saveHist(list.slice(0, 50));
