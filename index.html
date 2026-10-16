@@ -78,7 +78,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 7-6 · 판 2a9ad93 10/16 15:53 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 7-7 · 판 b4c7cbf 10/16 15:58 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -161,15 +161,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=2a9ad93-1016065310"></script>
+<script src="slope.js?v=b4c7cbf-1016065804"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 2a9ad93-1016065310를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 b4c7cbf-1016065804를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = '2a9ad93-1016065310';
+const BUILD_ID = 'b4c7cbf-1016065804';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -345,7 +345,7 @@ $('ar').addEventListener('click', e => {
 });
 function resetAll(clearPoints) {
   marks = []; pendingTap = null; wantShot = false;
-  if (clearPoints) { gridP.clear(); gridD.clear(); hitRate = []; scanStart = performance.now(); goodSince = 0; prevCam = null; fastRate = []; }
+  if (clearPoints) { gridP.clear(); gridD.clear(); hitRate = []; Object.assign(hitDiag, { n: 0, flat: 0, same: 0, ns: 0 }); scanStart = performance.now(); goodSince = 0; prevCam = null; fastRate = []; }
   dots.forEach(d => { d.life = 0; d.on = false; });
   lastHudT = 0; refresh();
 }
@@ -445,7 +445,7 @@ function sampleDepth(depth, view) {
 }
 // 특징점 광선 결과 → 세계 좌표
 function sampleHits(frame, view) {
-  const c = view.transform.position;
+  const c = view.transform.position, ys = [];
   let hit = 0;
   for (const src of hitSources) {
     const res = frame.getHitTestResults(src);
@@ -454,9 +454,18 @@ function sampleHits(frame, view) {
     const q = p.transform.position, d = Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z);
     if (d < NEAR_MIN || d > HIT_MAX) continue;
     gridP.add(q.x, q.y, q.z, frameNo, d); hit++;
+    // 진단: 맞은 자리의 자세가 정확히 수평인가 (AR '바닥 면'에 맞은 것이면 늘 정확히 수평)
+    const o = p.transform.orientation, upY = 1 - 2 * (o.x * o.x + o.z * o.z);
+    hitDiag.n++; if (upY > 0.99999998) hitDiag.flat++;
+    ys.push(q.y);
   }
+  // 진단: 한 장면에서 맞은 점들이 0.2mm 안으로 똑같은 높이인가 (진짜 바닥 무늬 점이면 높이가 조금씩 다르고, 수평 '바닥 면'에 맞은 것이면 똑같음)
+  if (ys.length >= 4) { const m = ys.slice().sort((a, b) => a - b)[ys.length >> 1]; hitDiag.same += ys.filter(y => Math.abs(y - m) < 0.0002).length; hitDiag.ns += ys.length; }
   hitRate.push(hit / hitSources.length); if (hitRate.length > 30) hitRate.shift();
 }
+// 10/16 15:49 성환님 "눈으로 봤을 땐 확연한 내리막이었어. 카메라가 내리막을 못 잡고 있어" — 카메라 오르막이 늘 0% 근처였음.
+// 크롬이 주는 '특징점'이 사실 AR의 '수평 바닥 면' 위 점이면 어떤 경사도 평평하게 나온다 → 그걸 가리는 숫자
+const hitDiag = { n: 0, flat: 0, same: 0, ns: 0 };
 
 // 누른 자리 → 땅 위 점. 모은 칸(특징점 먼저, 없으면 깊이)에서 찾고, 그래도 없으면 이 장면의 깊이로.
 // 공은 공 가운데 높이(2.1cm)로 맞춰 공 한가운데를, 높이는 둘레(8~40cm) 칸의 가운데 값으로 → 공 위·홀 구멍·깃대를 눌러도 땅 높이.
@@ -512,6 +521,9 @@ function compute() {
   info.nUsed = used.length; info.nAll = cells.length; info.nP = cP.length; info.nD = cD.length;
   info.cover = GR.coverage(used, b, h);
   info.planeP = planeP; info.planeD = planeD; info.plane = plane;
+  const sgn = f => f ? { along: (f.a * ux + f.b * uz) * 100, side: (f.a * -uz + f.b * ux) * 100 } : null;   // 옆은 오른쪽이 높으면 +
+  info.sgnP = sgn(planeP); info.sgnD = sgn(planeD);
+  info.diag = { ...hitDiag };
   info.cells = used.slice(0, 400).map(c => [c.x, c.y, c.z]);
   // 구간별 경사 (공 쪽 · 가운데 · 홀 쪽 1/3씩) — 정답 재기(한 자리)와 같은 자리끼리 비교하려고 (10/16 15:49 아스팔트: 카메라 평평 vs 정답 내리막 3.6%)
   info.segs = [0, 1, 2].map(k => {
@@ -595,7 +607,9 @@ function warnsOf(i, list) {
 function recordText(i, list) {
   const [up, side] = slopeLines(i), warns = warnsOf(i, list);
   const meta = `${i.src} 칸 ${i.nUsed}/${i.nAll}개 씀 (특징점 ${i.nP} · 깊이 ${i.nD}) · 라인 비춤 ${Math.round(i.cover * 100)}% · 어긋남 ±${(i.rms * 100).toFixed(1)}cm` +
-    ` · 특징점으로만 ${pct(i.planeP)} / 깊이로만 ${pct(i.planeD)} · 중력 차이 ${gravityAngleText()}` +
+    ` · 특징점으로만 ${i.sgnP ? `오르막 ${pctS(i.sgnP.along / 100)} 옆 ${pctS(i.sgnP.side / 100)}` : '-'} / 깊이로만 ${i.sgnD ? `오르막 ${pctS(i.sgnD.along / 100)} 옆 ${pctS(i.sgnD.side / 100)}` : '-'}` +
+    (i.diag && i.diag.n ? ` · 특징점 진단: 정확히 수평 자세 ${Math.round(i.diag.flat / i.diag.n * 100)}% · 같은 높이 ${i.diag.ns ? Math.round(i.diag.same / i.diag.ns * 100) : '-'}%` : '') +
+    ` · 중력 차이 ${gravityAngleText()}` +
     (i.upDiff ? ` · 센서−AR 위(휴대폰 기준) 좌우 ${pctS(i.upDiff[0])} 앞뒤 ${pctS(i.upDiff[2])}` : '') +
     (i.sensor ? ` · 센서 위 기준이면 오르막 ${pctS(i.sensor.along / 100)} · 옆 ${pctS(i.sensor.side / 100)}(오른쪽이 높으면 +)` : '');
   const pts = list.map((m, k) => `${markLabel(k)} ${m.dist.toFixed(1)}m(${m.src})`).join(' / ');
