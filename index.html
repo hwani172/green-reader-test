@@ -67,7 +67,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 6-2 · 판 edc72a1 10/16 13:46 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 6-3 · 판 8ec2608 10/16 13:54 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -78,6 +78,7 @@
         <li>그다음은 <b>원하는 곳을 더</b> 찍어도 돼요. 많을수록 정확해요.</li>
         <li>다 찍었으면 <b>[저장]</b> → 화면이 멈추고 <b>경사·구슬 지도·유도선</b>(어디를 보고 얼마나 세게)이 나와요.</li>
         <li>한 점 찍을 때마다 <b>2초쯤 가만히</b>(노란 고리가 다 찰 때까지). 잘못 찍으면 [한 점 취소].</li>
+        <li>화면 아래 <b>"바닥 무늬 잡힘 ✓"</b>(초록)이면 잴 수 있는 바닥, <b>"안 잡힘 ✗"</b>(빨강)이면 카메라가 바닥을 못 보는 거예요(민무늬 바닥·사무실 바닥).</li>
         <li>경사 옆의 <b>±</b>는 "이만큼 틀릴 수 있다"는 뜻이에요. ±가 크면 점을 더 찍어 주세요. 혼자 크게 튀는 점은 앱이 알아서 빼요(회색 ×).</li>
       </ol>
     </div>
@@ -128,15 +129,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=edc72a1-1016044619"></script>
+<script src="slope.js?v=8ec2608-1016045415"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 edc72a1-1016044619를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 8ec2608-1016045415를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = 'edc72a1-1016044619';
+const BUILD_ID = '8ec2608-1016045415';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -162,7 +163,8 @@ const DOT_N = 160;                      // 구슬 수
 // 찍게 한 다음 저장을 누르면 정지된 화면에서 경사를 보여 주고 퍼팅스타처럼 유도선을 보여 주는 게 어때" + "공에 직접 찍어도 되게".
 // 계산은 점을 찍을 때 한 번씩만. 저장하면 그 순간의 카메라 사진 위에 결과를 멈춰서 보여 준다.
 
-let session = null, refSpace = null, gl = null, glBinding = null;
+let session = null, refSpace = null, viewerSpace = null, gl = null, glBinding = null;
+let centerSrc = null, centerHits = [];   // 화면 가운데 광선이 바닥 무늬(특징점)를 잡는지 — 이 바닥을 잴 수 있는지 바로 보여 주려고
 let marks = [];               // 찍은 점: { kind:'ball'|'hole'|'side', p:[x,y,z], src, pD, pP, spread, dist }
 let measuring = null;         // 지금 재는 점: { kind, nx, ny, frames, ptsD, est, rays, srcs, ptsK, ptsPl, planeSrc }
 let resultPlane = null, resultInfo = null;
@@ -242,6 +244,11 @@ async function startAR() {
     } catch (e) { camState = '안 됨'; }
     step('3. 화면 준비');
     refSpace = await s.requestReferenceSpace('local');
+    centerSrc = null; centerHits = [];
+    try {
+      viewerSpace = await s.requestReferenceSpace('viewer');
+      if (s.requestHitTestSource) s.requestHitTestSource({ space: viewerSpace, entityTypes: ['point'] }).then(src => { centerSrc = src; }).catch(() => {});
+    } catch {}
     step('4. 위치 기준 준비');
     hitState = s.requestHitTestSource ? '준비' : '없음';
     overlay.classList.remove('show-still'); still = null;
@@ -352,9 +359,12 @@ function onFrame(t, frame) {
   if (depth) { try { const d = depth.getDepthInMeters(0.5, 0.5); depthOk = d > NEAR_MIN && d < FAR_MAX; } catch { depthOk = false; } }
   else depthOk = false;
   if (measuring) measureStep(frame, view, depth);
+  if (centerSrc) { centerHits.push(frame.getHitTestResults(centerSrc).length > 0 ? 1 : 0); if (centerHits.length > 30) centerHits.shift(); }
   if (depthOk !== lastDepthOk) { lastDepthOk = depthOk; if (!lostTrack) refresh(); }   // 땅 읽을 준비가 됐다/안 됐다 할 때만 글씨를 바꾼다
 
-  $('debug').textContent = `깊이 ${depthOk ? '됨' : '아직'} · 특징점 ${hitState} · 사진 ${camState} · 중력 차이 ${gravityAngleText()}`;
+  const tex = centerHits.length ? centerHits.reduce((a, b) => a + b, 0) / centerHits.length : -1;
+  $('debug').innerHTML = `<b style="color:${tex > 0.5 ? '#8fe39a' : '#ff8a7a'}">화면 가운데 바닥 무늬 ${tex < 0 ? '-' : tex > 0.5 ? '잡힘 ✓' : '안 잡힘 ✗ (잴 수 없는 바닥)'}</b>` +
+    ` · 깊이 ${depthOk ? '됨' : '아직'} · 특징점 ${hitState} · 사진 ${camState} · 중력 차이 ${gravityAngleText()}`;
   drawAR(dt);
 }
 
@@ -450,10 +460,13 @@ function finishMeasure(view) {
   const c = view.transform.position;
   const mark = { kind: m.kind, p, src: pP ? '특징점' : '깊이', pD, pP, pPl,
     spread: spreadCm(pP ? m.ptsP : m.ptsD, p), dist: Math.hypot(p[0] - c.x, p[1] - c.y, p[2] - c.z) };
+  // 2초 동안 높이가 8cm 넘게 흔들렸으면 못 믿을 점 — 받지 않는다 (10/16 사무실 기록: 공이 ±29cm, 9.9m로 잡힘)
+  if (mark.spread > 8) { toast(`그 자리는 흔들림이 너무 커요(±${mark.spread.toFixed(0)}cm). 무늬가 있는 곳을 다시 눌러 주세요`, 3500); return; }
   marks.push(mark);
   compute();
   refresh();
-  toast(`${markLabel(marks.length - 1)} 찍음` + (mark.dist > FAR_WARN ? ` (${mark.dist.toFixed(1)}m — 멀어서 덜 정확할 수 있어요)` : ''), 1500);
+  toast(`${markLabel(marks.length - 1)} 찍음` + (mark.dist > FAR_WARN ? ` (${mark.dist.toFixed(1)}m — 멀어서 덜 정확할 수 있어요)` : '') +
+    (pP ? '' : ' · 바닥 무늬가 안 잡혀 깊이로만 쟀어요(덜 정확)'), pP ? 1500 : 3000);
 }
 
 // 점을 찍거나 지울 때만 계산한다 (4개 이상일 때)
@@ -539,6 +552,9 @@ function warnsOf(i, list) {
   if (i.sides.every(v => Math.abs(v) < SIDE_MIN)) w.push('옆 점이 라인에 너무 가까워요. 라인에서 반 걸음 이상 옆을 찍으면 더 정확해요');
   else if (i.sides.every(v => v > 0) || i.sides.every(v => v < 0)) w.push('옆 점이 모두 한쪽에 있어요. 왼쪽·오른쪽 둘 다 찍어 주세요');
   if (list.some(m => m.dist > FAR_WARN)) w.push(`${FAR_WARN}m보다 먼 점이 있어요. 멀수록 덜 정확해요`);
+  const weak = list.filter(m => !m.pP).length;
+  if (weak) w.push(`바닥 무늬를 못 잡은 점이 ${weak}개예요(깊이로만 잼). 민무늬 바닥이면 숫자를 믿기 어려워요`);
+  if (i.used && (!i.used[0] || !i.used[1])) w.push(`${!i.used[0] ? '공' : '홀'} 자리가 다른 점들과 안 맞아요. [다시]로 새로 찍어 주세요`);
   return w;
 }
 function resultText(i, plain, list) {
