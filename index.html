@@ -29,6 +29,8 @@
   /* ── AR 화면: 단추 줄 말고는 화면 어디든 누르면 공·홀을 찍는다 ── */
   #ar, #still { display: none; position: absolute; inset: 0; }
   #overlay.in-ar { background: transparent; }
+  html.ar-on, html.ar-on body { background: transparent; }   /* 앱: 아래에 깔린 카메라 화면이 보이게 */
+  #appCard { border: 2px solid var(--accent); }
   #overlay.in-ar #start, #overlay.show-still #start { display: none; }
   #overlay.in-ar #ar { display: block; }
   #overlay.show-still #still { display: block; }
@@ -76,9 +78,16 @@
     <h1>그린 읽기 시험판</h1>
     <p class="sub">좌우로 비추고, 공·홀만 톡톡 누르면 경사와 유도선을 보여 줍니다.</p>
     <p id="support"></p>
+    <div class="card" id="appCard" style="display:none">
+      <b>⚠ 웹(크롬)에서는 경사를 못 재요</b><br>
+      크롬은 바닥의 진짜 무늬 점을 주지 않아서 어떤 경사도 평평하게 나와요(10/16 확인). <b>앱</b>으로 재 주세요.<br>
+      <a href="green-reader.apk" style="color:var(--accent);font-weight:700;font-size:19px">📥 그린 읽기 앱 받기</a>
+      <span id="appBuild" style="color:var(--dim);font-size:14px"></span><br>
+      <span style="font-size:15px;color:var(--dim)">받은 뒤 알림의 파일을 눌러 설치 → "출처를 알 수 없는 앱" 허용을 물으면 크롬에 허용. 앱을 열면 이 화면이 앱 안에서 그대로 나와요.</span>
+    </div>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 7-7 · 판 b4c7cbf 10/16 15:58 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 8 · 판 f287d03 10/16 17:25 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -161,15 +170,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=b4c7cbf-1016065804"></script>
+<script src="slope.js?v=f287d03-1016082500"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 b4c7cbf-1016065804를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 f287d03-1016082500를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = 'b4c7cbf-1016065804';
+const BUILD_ID = 'f287d03-1016082500';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -244,7 +253,16 @@ showHist();
 setTimeout(showCalib, 0);
 
 // ── 지원 확인 ──
+const APP = !!window.GRApp;                 // 안드로이드 앱 안이면 true (앱이 진짜 무늬 점을 넘겨줌)
+if (APP) {
+  document.documentElement.classList.add('app');
+  try { $('ver').innerHTML = $('ver').innerHTML.replace(/ · 카카오톡.*$/, ' · ' + GRApp.version()); } catch {}
+} else {
+  $('appCard').style.display = 'block';
+  fetch('app.json?t=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(j => { $('appBuild').textContent = ` (앱 판 ${j.build})`; }).catch(() => { $('appBuild').textContent = ' (아직 준비 중)'; });
+}
 (async () => {
+  if (APP) { $('go').disabled = false; return; }
   if (!navigator.xr) { $('support').textContent = '이 브라우저는 AR을 지원하지 않아요. 안드로이드 휴대폰의 크롬으로 열어 주세요.'; return; }
   let ok = false;
   try { ok = await navigator.xr.isSessionSupported('immersive-ar'); } catch {}
@@ -309,7 +327,7 @@ async function startAR() {
     starting = false; $('go').disabled = false; $('go').textContent = '카메라 켜고 시작';
   }
 }
-$('go').onclick = startAR;
+$('go').onclick = () => APP ? appStart() : startAR();
 function onSessionEnd() {
   session = null; hitSources = []; overlay.classList.remove('in-ar');
   if (still) { overlay.classList.add('show-still'); showStill(); }
@@ -390,23 +408,35 @@ function onFrame(t, frame) {
   lostTrack = !!pose.emulatedPosition;
   if (hitSetup === 'no' && session.requestHitTestSource) setupHitTests(view.projectionMatrix);
 
-  // 센서 '위' 방향을 세계 좌표로 바꿔 천천히 평균
-  if (upDev) {
-    const m = view.transform.matrix;
-    const w = [m[0] * upDev[0] + m[4] * upDev[1] + m[8] * upDev[2],
-               m[1] * upDev[0] + m[5] * upDev[1] + m[9] * upDev[2],
-               m[2] * upDev[0] + m[6] * upDev[1] + m[10] * upDev[2]];
-    upEma = upEma ? upEma.map((v, i) => v * 0.98 + w[i] * 0.02) : w;
-    const d = [upDev[0] - m[1], upDev[1] - m[5], upDev[2] - m[9]];   // AR의 위(세계 y)를 휴대폰 기준으로 = (m[1], m[5], m[9])
-    upDiffEma = upDiffEma ? upDiffEma.map((v, i) => v * 0.98 + d[i] * 0.02) : d;
-  }
-
+  trackUp(view);
   if (wantShot) { wantShot = false; freeze(view); return; }
 
   let depth = null;
   try { depth = frame.getDepthInformation(view); } catch (e) { depth = null; }
   depthOk = false;
-  // 이 장면을 모아도 되나: 위치를 다시 찾는 중이 아니고, 자리 잡은 지 1.5초 넘었고, 휴대폰이 천천히 움직일 때만
+  if (canCollect(view, dt)) {
+    if (depth) sampleDepth(depth, view);
+    if (hitSources.length) sampleHits(frame, view);
+  }
+  if (pendingTap) { const tap = pendingTap; pendingTap = null; placeMark(tap, view, depth); }
+
+  if (t - lastHudT > 300) { lastHudT = t; refresh(); }
+  drawAR(dt);
+}
+
+// 센서 '위' 방향을 세계 좌표로 바꿔 천천히 평균
+function trackUp(view) {
+  if (!upDev) return;
+  const m = view.transform.matrix;
+  const w = [m[0] * upDev[0] + m[4] * upDev[1] + m[8] * upDev[2],
+             m[1] * upDev[0] + m[5] * upDev[1] + m[9] * upDev[2],
+             m[2] * upDev[0] + m[6] * upDev[1] + m[10] * upDev[2]];
+  upEma = upEma ? upEma.map((v, i) => v * 0.98 + w[i] * 0.02) : w;
+  const d = [upDev[0] - m[1], upDev[1] - m[5], upDev[2] - m[9]];   // AR의 위(세계 y)를 휴대폰 기준으로 = (m[1], m[5], m[9])
+  upDiffEma = upDiffEma ? upDiffEma.map((v, i) => v * 0.98 + d[i] * 0.02) : d;
+}
+// 이 장면을 모아도 되나: 위치를 다시 찾는 중이 아니고, 자리 잡은 지 1.5초 넘었고, 휴대폰이 천천히 움직일 때만
+function canCollect(view, dt) {
   frameNo++;
   const now = performance.now(), cm = view.transform.matrix, pos = [cm[12], cm[13], cm[14]], fwd = [-cm[8], -cm[9], -cm[10]];
   let fast = false;
@@ -418,14 +448,70 @@ function onFrame(t, frame) {
   prevCam = { pos, fwd };
   fastRate.push(fast ? 1 : 0); if (fastRate.length > 30) fastRate.shift();
   if (lostTrack || !goodSince) goodSince = lostTrack ? 0 : now;
-  if (!lostTrack && now - goodSince > WARMUP_MS && !fast) {
-    if (depth) sampleDepth(depth, view);
-    if (hitSources.length) sampleHits(frame, view);
-  }
-  if (pendingTap) { const tap = pendingTap; pendingTap = null; placeMark(tap, view, depth); }
+  return !lostTrack && now - goodSince > WARMUP_MS && !fast;
+}
 
+// ── 앱 모드 (안드로이드 앱 안: window.GRApp) ──
+// 앱(app/…/MainActivity.java)이 장면마다 grFrame({n, tr, why, p:투영, v:보기, c:카메라 자리, pts:[x,y,z,믿음,…]})을 부른다.
+// pts는 구글 AR(ARCore)이 추적하는 진짜 무늬 점(점 구름) — 크롬과 달리 수평 바닥 면에 붙은 점이 아니다.
+const APP_CONF = 0.2;                   // 믿음 정도가 이보다 낮은 점은 버림
+let pendingFreeze = null;
+function appStart() {
+  starting = false;
+  session = { app: true, end() { try { GRApp.stop(); } catch {} session = null; document.documentElement.classList.remove('ar-on'); onSessionEnd(); } };
+  $('support').textContent = ''; $('steps').textContent = '';
+  overlay.classList.remove('show-still'); still = null;
+  overlay.classList.add('in-ar'); document.documentElement.classList.add('ar-on');
+  hitSetup = 'ok'; camState = '앱'; lastView = null; lastT = 0;
+  resetAll(true);
+  try { GRApp.start(); } catch (e) { toast('앱과 연결이 안 돼요: ' + e.message, 4000); }
+}
+window.grStatus = msg => { step(msg); };
+window.grError = msg => { toast(msg, 5000); $('support').textContent = msg; if (session && session.app && !lastView) session.end(); };
+const WHY = { BAD_STATE: '잠깐 문제가 생겼어요', INSUFFICIENT_LIGHT: '너무 어두워요', EXCESSIVE_MOTION: '너무 빨리 움직여요',
+  INSUFFICIENT_FEATURES: '무늬가 적은 곳이에요 — 잔디·무늬 있는 곳을 비춰 주세요', CAMERA_UNAVAILABLE: '카메라를 쓸 수 없어요', NONE: '좌우로 살짝 움직여 주세요' };
+window.grFrame = f => {
+  if (!session || !session.app) return;
+  const t = performance.now(), dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0; lastT = t;
+  if (!f.tr) {
+    lostTrack = true; lastView = null;
+    if (t - lastHudT > 300) { lastHudT = t; $('hudMain').textContent = '위치를 잡는 중…'; $('hudMeta').textContent = WHY[f.why] || f.why || ''; }
+    drawAR(dt); return;
+  }
+  lostTrack = false;
+  const view = { projectionMatrix: f.p, transform: { matrix: f.c, inverse: { matrix: f.v }, position: { x: f.c[12], y: f.c[13], z: f.c[14] } } };
+  lastView = { proj: f.p, viewMatrix: f.v, cam: f.c };
+  trackUp(view);
+  if (wantShot) { wantShot = false; freezeApp(view); return; }
+  if (canCollect(view, dt) && f.pts) samplePoints(f.pts, view);
+  if (pendingTap) { const tap = pendingTap; pendingTap = null; placeMark(tap, view, null); }
   if (t - lastHudT > 300) { lastHudT = t; refresh(); }
   drawAR(dt);
+};
+// 진짜 무늬 점 → 10cm 칸
+function samplePoints(pts, view) {
+  const c = view.transform.position, ys = [];
+  let n = 0;
+  for (let i = 0; i + 3 < pts.length; i += 4) {
+    if (pts[i + 3] < APP_CONF) continue;
+    const x = pts[i], y = pts[i + 1], z = pts[i + 2], d = Math.hypot(x - c.x, y - c.y, z - c.z);
+    if (d < NEAR_MIN || d > HIT_MAX) continue;
+    gridP.add(x, y, z, frameNo, d); n++; ys.push(y);
+  }
+  // 진단(크롬 때와 같은 숫자): 같은 높이 비율 — 진짜 점이면 낮아야 함
+  if (ys.length >= 4) { const m = ys.slice().sort((a, b) => a - b)[ys.length >> 1]; hitDiag.same += ys.filter(y => Math.abs(y - m) < 0.0002).length; hitDiag.ns += ys.length; hitDiag.n += ys.length; }
+  hitRate.push(Math.min(1, n / 40)); if (hitRate.length > 30) hitRate.shift();
+}
+// 계산 끝(앱): 앱에 카메라 사진을 부탁하고, 받으면 멈춘 화면으로
+function freezeApp(view) {
+  pendingFreeze = { projectionMatrix: Array.from(view.projectionMatrix), transform: { inverse: { matrix: Array.from(view.transform.inverse.matrix) } } };
+  const done = photo => { if (!pendingFreeze) return; const fz = pendingFreeze; pendingFreeze = null; camState = photo ? '됨(앱)' : '안 됨(앱)'; finishFreeze(fz, photo); };
+  window.grPhoto = url => {
+    if (!url) { done(null); return; }
+    const img = new Image(); img.onload = () => done(img); img.onerror = () => done(null); img.src = url;
+  };
+  try { GRApp.capture(); } catch { done(null); }
+  setTimeout(() => done(null), 4000);    // 사진이 안 오면 4초 뒤 사진 없이
 }
 
 // 깊이 그림 → 세계 좌표 (4m 안만). ⚠ getDepthInMeters는 '화면(view) 기준' 위치를 받는다.
@@ -644,6 +730,9 @@ function newPutt() {
 function freeze(view) {
   let photo = null;
   try { photo = grabCamera(view); camState = photo ? '됨' : camState; } catch (e) { camState = '안 됨(' + (e && e.message || e) + ')'; }
+  finishFreeze(view, photo);
+}
+function finishFreeze(view, photo) {
   const { plane, info } = computed;
   info.upDiff = upDiffEma ? upDiffEma.slice() : null;
   // 비교용: AR의 '위' 대신 휴대폰 센서가 본 '위'(upEma, 세계 좌표)를 기준으로 다시 잰 경사. AR 위가 센서 위보다 ux만큼 +x 쪽으로 기울었으면
@@ -659,7 +748,7 @@ function freeze(view) {
     marks: [{ ...marks[0], p: info.ballP }, { ...marks[1], p: info.holeP }], plane, info, stamp: new Date() };
   newPutt();
   const stamp = still.stamp.toLocaleString('ko-KR', { hour12: false });
-  const text = `[${stamp}] 시험판 7 · 그린 빠르기 ${stimp.toFixed(1)}\n` + recordText(info, still.marks) + '\n유도선: ' + aimText(still.putt) +
+  const text = `[${stamp}] ${APP ? '앱' : '웹'} 시험판 8 · 그린 빠르기 ${stimp.toFixed(1)}\n` + recordText(info, still.marks) + '\n유도선: ' + aimText(still.putt) +
     (still.range ? ` (${rangeText(still.range)})` : '') + `\n(사진 ${camState})`;
   const list = loadHist(); list.unshift({ t: still.stamp.getTime(), text }); saveHist(list.slice(0, 50));
   session.end();              // → onSessionEnd → showStill()
@@ -733,7 +822,7 @@ document.querySelectorAll('#speedRow button').forEach(b => b.onclick = () => {
 $('stillTop').onclick = () => { $('stillTop').classList.toggle('mini'); if (still) showStillText(); };
 function leaveStill() { still = null; overlay.classList.remove('show-still'); showHist(); }
 $('sHome').onclick = () => { leaveStill(); setTimeout(checkUpdate, 300); };
-$('sAgain').onclick = () => { leaveStill(); startAR(); };
+$('sAgain').onclick = () => { leaveStill(); APP ? appStart() : startAR(); };
 $('sPhoto').onclick = () => {
   if (!still) return;
   const cv = $('stillCv'), out = document.createElement('canvas');
