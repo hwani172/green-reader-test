@@ -248,8 +248,58 @@
     return { u: px * ux + pz * uz, v: -px * uz + pz * ux };
   }
 
+  // ── 유도선: 퍼팅스타(hwani172/my golf-putting/src/core.js)와 같은 공 물리 ──
+  // 경사로 끌리는 가속 = 9.81·5/7·기울기(구르는 공), 굴림 저항 = 그린 빠르기(스팀프, m)로 정해지는 감속도.
+  const G57 = 9.81 * 5 / 7, HOLE_R = 0.054, CUP = 0.108;
+  const decelOf = stimpM => 1.83 * 1.83 / (2 * stimpM);   // 스팀프미터: 1.83m/s로 굴린 공이 stimpM 미터 가서 멈춤
+
+  // 공을 (vx, vz)로 굴려 멈출 때까지. 공→홀 선 기준으로: 홀 높이(u = L)를 지날 때 옆으로 얼마나 비켜 있나(cross, 오른쪽 +), 멈춘 곳(uStop).
+  function roll(ball, vx, vz, plane, decel, F, path) {
+    const dt = 1 / 120;
+    let x = ball[0], z = ball[2], cross = null;
+    for (let i = 0; i < 120 * 30; i++) {
+      vx -= G57 * plane.a * dt; vz -= G57 * plane.b * dt;
+      const sp = Math.hypot(vx, vz), d = decel * dt;
+      if (sp <= d) break;
+      const k = (sp - d) / sp; vx *= k; vz *= k;
+      x += vx * dt; z += vz * dt;
+      const px = x - ball[0], pz = z - ball[2], u = px * F.ux + pz * F.uz;
+      if (cross === null && u >= F.L) cross = -px * F.uz + pz * F.ux;
+      if (path) {
+        if (i % 4 === 0) path.push([x, z]);
+        if (Math.hypot(x - F.hx, z - F.hz) < HOLE_R * 0.7) { path.push([x, z]); break; }   // 홀에 들어감
+      }
+    }
+    return { cross, uStop: (x - ball[0]) * F.ux + (z - ball[2]) * F.uz };
+  }
+
+  // 홀을 지나 past(m)만큼 더 가서 멈출 세기로, 홀 한가운데로 들어가는 방향을 찾는다.
+  // 돌려줌: aim = 공에서 홀까지 거리만큼 겨냥 방향으로 간 점(그 점을 보고 친다), side = 그 점이 홀에서 옆으로 몇 m(오른쪽 +),
+  //        flat = 평지에서 몇 m 치는 세기인가, path = 예상 경로 [[x, z], …]
+  function puttLine(ball, hole, plane, stimpM, past) {
+    past = past == null ? 0.4 : past;
+    const dx = hole[0] - ball[0], dz = hole[2] - ball[2], L = Math.hypot(dx, dz);
+    if (L < 0.3) return null;
+    const F = { L, ux: dx / L, uz: dz / L, hx: hole[0], hz: hole[2] }, decel = decelOf(stimpM);
+    const dirOf = th => [F.ux * Math.cos(th) - F.uz * Math.sin(th), F.uz * Math.cos(th) + F.ux * Math.sin(th)];  // th > 0 → 오른쪽
+    const speedFor = th => {
+      const d = dirOf(th); let lo = 0.05, hi = 8;
+      for (let k = 0; k < 28; k++) { const v = (lo + hi) / 2; if (roll(ball, d[0] * v, d[1] * v, plane, decel, F).uStop < L + past) lo = v; else hi = v; }
+      return hi;
+    };
+    const crossAt = th => { const v = speedFor(th), d = dirOf(th); return roll(ball, d[0] * v, d[1] * v, plane, decel, F).cross; };
+    let lo = -0.7, hi = 0.7;
+    const cLo = crossAt(lo), cHi = crossAt(hi);
+    if (cLo === null || cHi === null || cLo > 0 || cHi < 0) return null;   // 경사가 너무 심해 넣을 길이 없음
+    for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2, c = crossAt(m); if (c === null || c < 0) lo = m; else hi = m; }
+    const th = (lo + hi) / 2, v = speedFor(th), d = dirOf(th), path = [[ball[0], ball[2]]];
+    roll(ball, d[0] * v, d[1] * v, plane, decel, F, path);
+    return { th, v, side: L * Math.sin(th), cups: L * Math.sin(th) / CUP, flat: v * v / (2 * decel),
+      aim: [ball[0] + d[0] * L, ball[2] + d[1] * L], path };
+  }
+
   const api = { mat4Invert, mat4MulVec, unproject, project, Grid, fitPlane, cellsNear, cellsInCorridor, coverage, analyze, gradientField, gradAt,
-    screenRay, fitPoints, lineOffset };
+    screenRay, fitPoints, lineOffset, puttLine, decelOf, CUP };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GR = api;
 })(this);

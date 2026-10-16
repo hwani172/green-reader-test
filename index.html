@@ -27,22 +27,35 @@
   .small-btn { font-size: 16px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--dim); background: transparent; color: var(--ink); margin-right: 8px; }
 
   /* ── AR 화면: 단추 줄 말고는 화면 어디든 누르면 점을 찍는다 ── */
-  #ar { display: none; position: absolute; inset: 0; }
+  #ar, #still { display: none; position: absolute; inset: 0; }
   #overlay.in-ar { background: transparent; }
-  #overlay.in-ar #start { display: none; }
+  #overlay.in-ar #start, #overlay.show-still #start { display: none; }
   #overlay.in-ar #ar { display: block; }
-  #draw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #overlay.show-still #still { display: block; }
+  #draw, #stillCv { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #stillCv { background: #111; }
   .panel { position: absolute; left: 10px; right: 10px; background: rgba(0,0,0,.55); border-radius: 14px; padding: 8px 14px; pointer-events: none; }
-  #hud { top: max(10px, env(safe-area-inset-top)); }
+  #hud, #stillTop { top: max(10px, env(safe-area-inset-top)); }
   #hud .main { font-size: 22px; font-weight: 800; }
   #hud .meta, #debug { font-size: 13px; color: #cfd; }
   #result { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 96px); display: none; font-size: 18px; line-height: 1.45; }
-  #result b { color: var(--accent); }
-  #result .warn { color: var(--bad); font-size: 16px; }
-  #result .meta { font-size: 12px; color: #cfd; }
-  #bar { position: absolute; left: 0; right: 0; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; gap: 8px; padding: 0 10px; }
-  #bar button { flex: 1; font-size: 17px; font-weight: 700; padding: 16px 4px; border-radius: 12px; border: 0; background: rgba(255,255,255,.92); color: #123; }
-  #toast { position: absolute; left: 50%; bottom: 140px; transform: translateX(-50%); background: rgba(0,0,0,.75); padding: 10px 16px; border-radius: 10px; font-size: 17px; display: none; text-align: center; max-width: 90%; pointer-events: none; }
+  .panel b { color: var(--accent); }
+  .panel .warn { color: var(--bad); font-size: 15px; }
+  .panel .meta { font-size: 12px; color: #cfd; }
+  #stillTop { font-size: 18px; line-height: 1.45; }
+  #stillTop { pointer-events: auto; }                /* 누르면 한 줄로 접혀 그 아래 홀이 보인다 */
+  #stillTop .aim { font-size: 20px; font-weight: 800; }
+  #stillTop.mini .more { display: none; }
+  #stillTop .fold { float: right; font-size: 13px; color: #cfd; font-weight: 400; }
+  .bar { position: absolute; left: 0; right: 0; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; gap: 8px; padding: 0 10px; }
+  .bar button { flex: 1; font-size: 17px; font-weight: 700; padding: 16px 4px; border-radius: 12px; border: 0; background: rgba(255,255,255,.92); color: #123; }
+  .bar button.go { background: var(--accent); }
+  .bar button.dim { background: rgba(255,255,255,.5); }
+  #speedRow { position: absolute; left: 10px; right: 10px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 66px); display: flex; gap: 6px; align-items: center;
+    background: rgba(0,0,0,.55); border-radius: 12px; padding: 6px 10px; font-size: 14px; }
+  #speedRow button { flex: 1; font-size: 15px; padding: 8px 2px; border-radius: 8px; border: 1px solid #cfd; background: transparent; color: #fff; }
+  #speedRow button.on { background: var(--accent); color: #123; border-color: var(--accent); font-weight: 700; }
+  #toast { position: absolute; left: 50%; bottom: 140px; transform: translateX(-50%); background: rgba(0,0,0,.75); padding: 10px 16px; border-radius: 10px; font-size: 17px; display: none; text-align: center; max-width: 90%; pointer-events: none; z-index: 5; }
   #debug { position: absolute; left: 12px; right: 12px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 66px); text-shadow: 0 0 3px #000; line-height: 1.4; font-size: 11px; pointer-events: none; }
 </style>
 </head>
@@ -50,29 +63,28 @@
 <div id="overlay">
   <div id="start">
     <h1>그린 읽기 시험판</h1>
-    <p class="sub">화면에서 공·홀·옆 두 곳을 찍으면 거리와 경사를 보여 줍니다.</p>
+    <p class="sub">화면에서 공·홀과 둘레 몇 곳을 찍으면 경사와 유도선을 보여 줍니다.</p>
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 4 · 판 a084ce4 10/16 12:06 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 5 · 판 f0c2386 10/16 12:45 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
-      <b>② 그린에서 (점 4개 찍기)</b>
+      <b>그린에서</b>
       <ol>
         <li>공 뒤 1~2m에 서서 <b>공과 홀이 화면에 다 보이게</b> 휴대폰을 세로로 들어요. 처음 2~3초는 좌우로 살짝 움직여 주세요.</li>
-        <li>화면에서 <b>① 공 바로 옆 잔디</b>를 톡 → <b>② 홀 바로 앞(내 쪽) 잔디</b>를 톡. 거리와 대략의 오르막이 나와요.</li>
-        <li><b>③ 라인 왼쪽 잔디</b>(공과 홀 사이 가운데쯤, 라인에서 반 걸음~한 걸음 옆) 톡 → <b>④ 라인 오른쪽 잔디</b> 톡.</li>
-        <li>4점이 다 찍히면 한 번 계산해서 <b>오르막·옆 경사</b>와 <b>구슬 지도</b>(구슬이 굴러가는 쪽이 낮은 쪽)를 보여 줘요.</li>
-        <li>한 점을 찍을 때마다 <b>1초쯤 가만히</b> 들고 있어요. 잘못 찍으면 [한 점 취소].</li>
-        <li>[저장]을 누르면 숫자가 남아요. 화면 캡처(전원+소리 줄임)로 사진도 남길 수 있어요.</li>
+        <li>화면에서 <b>① 공</b>을 톡 → <b>② 홀(깃대 밑동)</b>을 톡. 공·홀은 그대로 눌러도 둘레 잔디 높이로 재요.</li>
+        <li><b>③ 라인 왼쪽 잔디</b> → <b>④ 라인 오른쪽 잔디</b>(공과 홀 사이 가운데쯤, 반 걸음~한 걸음 옆). 여기까지는 꼭 찍어요.</li>
+        <li>그다음은 <b>원하는 곳을 더</b> 찍어도 돼요. 많을수록 정확해요.</li>
+        <li>다 찍었으면 <b>[저장]</b> → 화면이 멈추고 <b>경사·구슬 지도·유도선</b>(어디를 보고 얼마나 세게)이 나와요.</li>
+        <li>한 점 찍을 때마다 <b>1초쯤 가만히</b>. 잘못 찍으면 [한 점 취소].</li>
       </ol>
     </div>
     <div class="card">
-      <b>① 집에서 먼저 시험해 볼 때</b>
+      <b>집에서 먼저 시험해 볼 때</b>
       <ol>
         <li>민무늬 바닥은 카메라가 잘 못 봐요. <b>신문지·잡지 4장</b>을 마름모(앞·뒤·왼쪽·오른쪽)로 펼쳐 주세요.</li>
-        <li>가까운 신문지를 공, 먼 신문지를 홀로 보고 차례로 찍어요.</li>
-        <li>평평한 바닥이니 <b>0%에 가깝게</b> 나오면 좋아요. 반대쪽에 서서 한 번 더 해 보면 더 좋아요.</li>
+        <li>가까운 신문지를 공, 먼 신문지를 홀로 보고 차례로 찍어요. 평평한 바닥이니 <b>0%에 가깝게</b> 나오면 좋아요.</li>
       </ol>
     </div>
     <div class="card" id="history">
@@ -91,27 +103,41 @@
     </div>
     <div class="panel" id="result"></div>
     <div id="debug"></div>
-    <div id="toast"></div>
-    <div id="bar">
+    <div class="bar" id="bar">
       <button id="bUndo">한 점 취소</button>
-      <button id="bSave">저장</button>
+      <button id="bSave" class="dim">저장</button>
       <button id="bReset">다시</button>
       <button id="bExit">끝</button>
     </div>
   </div>
+
+  <!-- [저장]을 누른 뒤의 멈춘 화면 -->
+  <div id="still">
+    <canvas id="stillCv"></canvas>
+    <div class="panel" id="stillTop"></div>
+    <div id="speedRow">그린 빠르기
+      <button data-s="2.4">2.4</button><button data-s="2.7">2.7</button><button data-s="3.0">3.0</button><button data-s="3.3">3.3</button>
+    </div>
+    <div class="bar">
+      <button id="sPhoto">사진 저장</button>
+      <button id="sAgain" class="go">다시 재기</button>
+      <button id="sHome">처음 화면</button>
+    </div>
+  </div>
+  <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=a084ce4-1016030652"></script>
+<script src="slope.js?v=f0c2386-1016034545"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 a084ce4-1016030652를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 f0c2386-1016034545를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = 'a084ce4-1016030652';
+const BUILD_ID = 'f0c2386-1016034545';
 async function checkUpdate() {
-  if (BUILD_ID.startsWith('__') || session || starting) return;   // 컴퓨터에서 바로 열었거나 AR 중이면 안 함
+  if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
     const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
     const j = await r.json();
@@ -127,21 +153,27 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chec
 const NEAR_MIN = 0.3, FAR_MAX = 10;     // 찍은 점은 이 거리 안만 쓴다
 const FAR_WARN = 6;                     // 이보다 먼 점은 "멀어서 부정확할 수 있음" 표시
 const MEASURE_FRAMES = 24;              // 한 점을 재는 장면 수 (약 1초)
+const MIN_MARKS = 4, MAX_MARKS = 20;    // 공·홀·옆 2개는 꼭, 그 뒤로는 원하는 만큼
+const RING = [0.10, 0.16];              // 공·홀을 누르면 그 둘레 이 반지름(m)의 잔디 높이를 잰다 (공 지름 4.3cm, 홀 지름 10.8cm)
 const SIDE_MIN = 0.25;                  // 옆 점이 라인에서 이만큼(m)은 떨어져야 옆 경사가 보인다
 const DOT_N = 160;                      // 구슬 수
-// 시험판 4 (10/16 성환님): "공과 핀위치를 찍으면 … 그다음 좌우로 점을 하나씩 … 4개를 다 찍었을 때 계산해서 구슬 경사지도".
-// 화면이 움직일 때마다 계산하지 않고, 4점이 다 찍혔을 때 한 번만 계산한다. 그 뒤엔 구슬만 그린다.
-const ORDER = ['ball', 'hole', 'side', 'side'];
+// 시험판 5 (10/16 성환님): "공과 홀컵을 찍은 뒤 그 뒤에 점들은 많으면 많을수록 좋은 거잖아 … 최소 점 4개는 무조건 찍게 하고 그 뒤엔 원하는 곳에
+// 찍게 한 다음 저장을 누르면 정지된 화면에서 경사를 보여 주고 퍼팅스타처럼 유도선을 보여 주는 게 어때" + "공에 직접 찍어도 되게".
+// 계산은 점을 찍을 때 한 번씩만. 저장하면 그 순간의 카메라 사진 위에 결과를 멈춰서 보여 준다.
 
-let session = null, refSpace = null, gl = null;
-let marks = [];               // 찍은 점: { kind, p:[x,y,z], src, pD, pP, spread, dist }
-let measuring = null;         // 지금 재는 점: { nx, ny, frames, ptsD, ptsP, est, ray, hitSrc }
+let session = null, refSpace = null, gl = null, glBinding = null;
+let marks = [];               // 찍은 점: { kind:'ball'|'hole'|'side', p:[x,y,z], src, pD, pP, spread, dist }
+let measuring = null;         // 지금 재는 점: { kind, nx, ny, frames, ptsD, ptsP, est, ray, hitSrc }
 let resultPlane = null, resultInfo = null;
 let lastView = null;          // { proj, viewMatrix, cam }
-let lastT = 0, depthOk = false, hitState = '-', lostTrack = false;
+let lastT = 0, depthOk = false, hitState = '-', camState = '-', lostTrack = false, wantShot = false;
+let still = null;             // 멈춘 화면: { photo, proj, viewMatrix, marks, plane, info, putt, stamp }
+let stimp = 2.7;              // 그린 빠르기(스팀프, m)
+try { stimp = parseFloat(localStorage.getItem('green-reader-stimp')) || 2.7; } catch {}
 let upEma = null;             // 휴대폰 센서로 본 '위' 방향(세계 좌표) — AR의 위(y)와 맞는지 확인용
 const dots = Array.from({ length: DOT_N }, () => ({ x: 0, z: 0, life: 0, max: 1, on: false }));
 const ball = () => marks[0] && marks[0].p, hole = () => marks[1] && marks[1].p;
+const markLabel = i => i === 0 ? '공' : i === 1 ? '홀' : String.fromCharCode(0x2460 + i);   // ③ ④ ⑤ …
 
 // ── 기록 ──
 const HKEY = 'green-reader-history';
@@ -178,7 +210,7 @@ function toast(msg, ms) {
 let starting = false;
 function step(msg) { $('steps').textContent += msg + '\n'; }
 checkUpdate();
-$('go').onclick = async () => {
+async function startAR() {
   if (starting) return;               // 두 번 눌러도 한 번만 (허락 창을 기다리는 중에 또 누르면 "이미 켜져 있음" 오류가 남)
   if (session) { try { await session.end(); } catch {} session = null; }
   starting = true; $('go').disabled = true; $('go').textContent = 'AR 준비 중…';
@@ -190,23 +222,28 @@ $('go').onclick = async () => {
     step('1. AR 요청');
     s = await navigator.xr.requestSession('immersive-ar', {
       requiredFeatures: ['depth-sensing', 'dom-overlay'],
-      optionalFeatures: ['hit-test'],
+      optionalFeatures: ['hit-test', 'camera-access'],     // camera-access: [저장] 때 그 순간의 카메라 사진을 남기려고
       domOverlay: { root: overlay },
       depthSensing: { usagePreference: ['cpu-optimized'], dataFormatPreference: ['luminance-alpha', 'float32'] },
     });
     clearTimeout(slow);
     step('2. AR 켜짐');
     session = s;
-    s.addEventListener('end', () => { session = null; overlay.classList.remove('in-ar'); showHist(); step('AR 끝남'); setTimeout(checkUpdate, 300); });
+    s.addEventListener('end', onSessionEnd);
     const canvas = document.createElement('canvas');
     gl = canvas.getContext('webgl', { xrCompatible: true, alpha: true });
     if (!gl) throw new Error('WebGL을 만들지 못함');
     if (gl.makeXRCompatible) await gl.makeXRCompatible();
     s.updateRenderState({ baseLayer: new XRWebGLLayer(s, gl) });
+    glBinding = null; camState = '없음';
+    try {
+      if (typeof XRWebGLBinding !== 'undefined' && (!s.enabledFeatures || s.enabledFeatures.includes('camera-access'))) { glBinding = new XRWebGLBinding(s, gl); camState = '준비'; }
+    } catch (e) { camState = '안 됨'; }
     step('3. 화면 준비');
     refSpace = await s.requestReferenceSpace('local');
     step('4. 위치 기준 준비');
     hitState = s.requestHitTestSource ? '준비' : '없음';
+    overlay.classList.remove('show-still'); still = null;
     overlay.classList.add('in-ar');
     resetAll();
     s.requestAnimationFrame(onFrame);
@@ -218,18 +255,25 @@ $('go').onclick = async () => {
   } finally {
     starting = false; $('go').disabled = false; $('go').textContent = '카메라 켜고 시작';
   }
-};
+}
+$('go').onclick = startAR;
+function onSessionEnd() {
+  session = null; cancelMeasure(); overlay.classList.remove('in-ar');
+  if (still) { overlay.classList.add('show-still'); showStill(); }
+  else { showHist(); step('AR 끝남'); setTimeout(checkUpdate, 300); }
+}
 // 화면을 누를 때 AR '선택' 동작이 같이 일어나지 않게
 overlay.addEventListener('beforexrselect', e => e.preventDefault());
 
 // ── 점 찍기 ──
 $('ar').addEventListener('click', e => {
-  if (e.target.closest('#bar') || !session) return;
-  if (measuring) return;
-  if (marks.length >= ORDER.length) { toast('4점을 다 찍었어요. 새로 재려면 [다시]'); return; }
+  if (e.target.closest('.bar') || !session) return;
+  if (measuring || wantShot) return;
+  if (marks.length >= MAX_MARKS) { toast(`${MAX_MARKS}개까지예요. [저장]을 눌러 주세요`); return; }
   if (!lastView) { toast('카메라가 아직 준비 중이에요'); return; }
   const r = overlay.getBoundingClientRect();
-  measuring = { nx: (e.clientX - r.left) / r.width, ny: (e.clientY - r.top) / r.height, frames: 0, ptsD: [], ptsP: [], est: null, ray: null, hitSrc: null };
+  const kind = marks.length === 0 ? 'ball' : marks.length === 1 ? 'hole' : 'side';
+  measuring = { kind, nx: (e.clientX - r.left) / r.width, ny: (e.clientY - r.top) / r.height, frames: 0, ptsD: [], ptsP: [], est: null, ray: null, hitSrc: null };
   toast('재는 중… 1초만 가만히', 1100);
 });
 function cancelMeasure() {
@@ -238,7 +282,7 @@ function cancelMeasure() {
 }
 function resetAll() {
   cancelMeasure();
-  marks = []; resultPlane = resultInfo = null;
+  marks = []; resultPlane = resultInfo = null; wantShot = false;
   dots.forEach(d => { d.life = 0; d.on = false; });
   refresh();
 }
@@ -246,19 +290,14 @@ $('bReset').onclick = () => { resetAll(); toast('처음부터 다시 찍어 주�
 $('bUndo').onclick = () => {
   if (measuring) { cancelMeasure(); toast('재던 점을 취소했어요'); return; }
   if (!marks.length) { toast('지울 점이 없어요'); return; }
-  marks.pop(); resultPlane = resultInfo = null; dots.forEach(d => { d.on = false; });
-  refresh(); toast('마지막 점을 지웠어요');
+  marks.pop(); compute(); refresh(); toast('마지막 점을 지웠어요');
 };
 $('bExit').onclick = () => { if (session) session.end(); };
 $('bSave').onclick = () => {
-  const now = new Date();
-  const stamp = now.toLocaleString('ko-KR', { hour12: false });
-  let text;
-  if (resultInfo) text = `[${stamp}] 점 4개\n` + resultText(resultInfo, true);
-  else if (marks.length >= 2) text = `[${stamp}] 점 ${marks.length}개 (덜 찍음)\n` + twoPointText(true) + '\n' + marksText();
-  else { toast('아직 저장할 숫자가 없어요'); return; }
-  const list = loadHist(); list.unshift({ t: now.getTime(), text }); saveHist(list.slice(0, 50));
-  toast('저장했어요');
+  if (measuring) { toast('재는 중이에요. 잠깐만요'); return; }
+  if (marks.length < MIN_MARKS) { toast(`점을 ${MIN_MARKS}개 이상 찍어 주세요 (지금 ${marks.length}개)`); return; }
+  if (!resultPlane) { toast('옆 점이 라인과 한 줄이라 계산이 안 돼요. 라인 옆을 더 찍어 주세요', 3000); return; }
+  wantShot = true;            // 다음 장면에서 카메라 사진을 찍고 멈춘 화면으로
 };
 
 // ── 휴대폰 센서의 '위' 방향 (AR의 위와 맞는지 확인용) ──
@@ -278,7 +317,7 @@ function gravityAngleText() {
   return (Math.acos(Math.min(1, upEma[1] / n)) * 180 / Math.PI).toFixed(1) + '°';
 }
 
-// ── 매 장면: 점을 재는 1초 동안만 깊이를 읽는다. 다 찍은 뒤엔 그리기만. ──
+// ── 매 장면: 점을 재는 1초 동안만 깊이를 읽는다. 그 밖엔 그리기만. ──
 function onFrame(t, frame) {
   if (!session) return;
   session.requestAnimationFrame(onFrame);
@@ -288,7 +327,7 @@ function onFrame(t, frame) {
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
 
   const pose = frame.getViewerPose(refSpace);
-  if (!pose) { $('hudMain').textContent = '위치를 잃었어요'; $('hudMeta').textContent = '천천히 주변을 비춰 주세요'; lastView = null; lostTrack = true; draw(dt); return; }
+  if (!pose) { $('hudMain').textContent = '위치를 잃었어요'; $('hudMeta').textContent = '천천히 주변을 비춰 주세요'; lastView = null; lostTrack = true; drawAR(dt); return; }
   const view = pose.views[0];
   lastView = { proj: view.projectionMatrix, viewMatrix: view.transform.inverse.matrix, cam: view.transform.matrix };
   if (!!pose.emulatedPosition !== lostTrack) {   // 위치 추적이 끊겼다/돌아왔다 할 때만 글씨를 바꾼다
@@ -305,25 +344,28 @@ function onFrame(t, frame) {
     upEma = upEma ? upEma.map((v, i) => v * 0.98 + w[i] * 0.02) : w;
   }
 
+  if (wantShot) { wantShot = false; freeze(view); return; }
+
   let depth = null;
   try { depth = frame.getDepthInformation(view); } catch (e) { depth = null; }
   if (depth) { try { const d = depth.getDepthInMeters(0.5, 0.5); depthOk = d > NEAR_MIN && d < FAR_MAX; } catch { depthOk = false; } }
   else depthOk = false;
   if (measuring) measureStep(frame, view, depth);
 
-  $('debug').textContent = `깊이 ${depthOk ? '됨' : '아직'} · 특징점 ${hitState} · 중력 차이 ${gravityAngleText()}`;
-  draw(dt);
+  $('debug').textContent = `깊이 ${depthOk ? '됨' : '아직'} · 특징점 ${hitState} · 사진 ${camState} · 중력 차이 ${gravityAngleText()}`;
+  drawAR(dt);
 }
 
-// 누른 자리 하나를 약 1초 동안 잰다.
-// 깊이: 처음엔 누른 화면 자리, 그다음부터는 지금까지 잰 땅 위 점을 지금 화면에 다시 비춘 자리 → 손이 조금 움직여도 같은 잔디를 잰다.
-// 특징점: 처음 장면의 카메라에서 누른 자리로 쏜 '세계에 고정된' 광선이 AR 특징점에 맞는 곳.
+// 누른 자리 하나를 약 1초 동안 잰다. 처음엔 누른 화면 자리, 그다음부터는 지금까지 잰 땅 위 점을 지금 화면에 다시 비춘 자리를 잰다
+// (손이 조금 움직여도 같은 잔디를 잰다).
+// · 공·홀: 누른 자리 둘레(반지름 10cm·16cm 고리, 24곳)의 잔디만 잰다 → 공 위·홀 구멍 속·깃대를 눌러도 땅 높이가 나온다.
+// · 그 밖의 점: 누른 자리(3×3)를 잰다. 비교용으로 특징점(처음 장면 카메라에서 누른 쪽으로 쏜 '세계에 고정된' 광선)도 잰다.
 function measureStep(frame, view, depth) {
   const m = measuring;
-  const inv = GR.mat4Invert(view.projectionMatrix);
+  const proj = view.projectionMatrix, inv = GR.mat4Invert(proj);
   if (!inv) return;
   const cam = view.transform.matrix;
-  if (!m.ray) {
+  if (!m.ray && m.kind === 'side') {
     m.ray = GR.screenRay(m.nx, m.ny, inv, cam);
     if (session.requestHitTestSource && typeof XRRay !== 'undefined') {
       const o = m.ray.o, d = m.ray.d;
@@ -334,16 +376,31 @@ function measureStep(frame, view, depth) {
     }
   }
   if (depth) {
-    let sx = m.nx, sy = m.ny;
-    if (m.est) { const s = GR.project(m.est[0], m.est[1], m.est[2], view.projectionMatrix, view.transform.inverse.matrix); if (s) { sx = s[0]; sy = s[1]; } }
-    const cs = [];
+    const get = (nx, ny) => { if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return 0; try { return depth.getDepthInMeters(nx, ny); } catch { return 0; } };
+    let sx = m.nx, sy = m.ny, dEst = 0;
+    if (m.est) { const s = GR.project(m.est[0], m.est[1], m.est[2], proj, view.transform.inverse.matrix); if (s) { sx = s[0]; sy = s[1]; dEst = s[2]; } }
+    const cs = [], ds = [];
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-      const nx = sx + i * 0.006, ny = sy + j * 0.006;
-      if (nx < 0 || nx > 1 || ny < 0 || ny > 1) continue;
-      let d = 0; try { d = depth.getDepthInMeters(nx, ny); } catch {}
-      if (d > NEAR_MIN && d < FAR_MAX) cs.push(GR.unproject(nx, ny, d, inv, cam));
+      const nx = sx + i * 0.006, ny = sy + j * 0.006, d = get(nx, ny);
+      if (d > NEAR_MIN && d < FAR_MAX) { cs.push(GR.unproject(nx, ny, d, inv, cam)); ds.push(d); }
     }
-    if (cs.length >= 5) { m.ptsD.push(median3(cs)); m.est = median3(m.ptsD); }
+    if (m.kind === 'side') {
+      if (cs.length >= 5) { m.ptsD.push(median3(cs)); m.est = median3(m.ptsD); }
+    } else {
+      // 고리 크기를 화면 크기로 바꾸려면 거리가 필요하다: 지금까지 잰 점까지의 거리, 처음엔 누른 자리 깊이
+      const dC = dEst || (ds.length >= 3 ? ds.sort((a, b) => a - b)[ds.length >> 1] : 0);
+      if (dC) {
+        const rp = [];
+        RING.forEach((R, ri) => {
+          for (let k = 0; k < 12; k++) {
+            const a = (k + ri * 0.5) * Math.PI / 6;
+            const nx = sx + Math.cos(a) * R * proj[0] / 2 / dC, ny = sy - Math.sin(a) * R * proj[5] / 2 / dC, d = get(nx, ny);
+            if (d > NEAR_MIN && d < FAR_MAX) rp.push(GR.unproject(nx, ny, d, inv, cam));
+          }
+        });
+        if (rp.length >= 8) { m.ptsD.push(median3(rp)); m.est = median3(m.ptsD); }
+      }
+    }
   }
   if (m.hitSrc) {
     const res = frame.getHitTestResults(m.hitSrc);
@@ -367,55 +424,57 @@ function finishMeasure(view) {
   const m = measuring; cancelMeasure();
   const pD = m.ptsD.length >= 5 ? median3(m.ptsD) : null;
   const pP = m.ptsP.length >= 5 ? median3(m.ptsP) : null;
-  // 깊이 = 누른 바로 그 자리. 특징점은 광선 근처의 다른 점일 수 있어서 비교용으로 남기고, 깊이가 없을 때만 쓴다.
+  // 깊이 = 누른 바로 그 자리(공·홀은 그 둘레). 특징점은 광선 근처의 다른 점일 수 있어서 비교용으로 남기고, 깊이가 없을 때만 쓴다.
   const p = pD || pP;
   if (!p) { toast('그 자리를 못 읽었어요. 조금 더 가까이 가거나, 휴대폰을 좌우로 살짝 움직인 뒤 다시 눌러 주세요', 3000); return; }
   const c = view.transform.position;
-  const mark = { kind: ORDER[marks.length], p, src: pD ? '깊이' : '특징점', pD, pP,
+  const mark = { kind: m.kind, p, src: pD ? '깊이' : '특징점', pD, pP,
     spread: spreadCm(pD ? m.ptsD : m.ptsP, p), dist: Math.hypot(p[0] - c.x, p[1] - c.y, p[2] - c.z) };
   marks.push(mark);
-  if (marks.length === ORDER.length) compute();
+  compute();
   refresh();
-  const next = ['', '공 찍음', '홀 찍음', '③ 찍음', ''][marks.length];
-  if (next) toast(next + (mark.dist > FAR_WARN ? ` (${mark.dist.toFixed(1)}m — 멀어서 덜 정확할 수 있어요)` : ''), 1500);
+  toast(`${markLabel(marks.length - 1)} 찍음` + (mark.dist > FAR_WARN ? ` (${mark.dist.toFixed(1)}m — 멀어서 덜 정확할 수 있어요)` : ''), 1500);
 }
 
-// 4점이 다 찍혔을 때 한 번만 계산한다
+// 점을 찍거나 지울 때만 계산한다 (4개 이상일 때)
 function compute() {
-  const pts = marks.map(m => m.p);
-  const plane = GR.fitPoints(pts);
-  if (!plane) { resultPlane = resultInfo = null; return; }
-  const info = GR.analyze(ball(), hole(), plane);
-  info.rms = plane.rms;
-  info.sides = marks.slice(2).map(m => GR.lineOffset(ball(), hole(), m.p).v);
-  // 비교용: 깊이로만 / 특징점으로만 잰 네 점이면 경사가 어떻게 나오나
-  const only = k => marks.every(m => m[k]) ? GR.fitPoints(marks.map(m => m[k])) : null;
-  info.planeD = only('pD'); info.planeP = only('pP');
-  resultPlane = plane; resultInfo = info;
+  resultPlane = resultInfo = null;
   dots.forEach(d => { d.on = false; });
+  if (marks.length < MIN_MARKS) return;
+  const plane = GR.fitPoints(marks.map(m => m.p));
+  if (!plane) return;
+  const info = GR.analyze(ball(), hole(), plane);
+  info.rms = plane.rms; info.n = marks.length;
+  info.sides = marks.slice(2).map(m => GR.lineOffset(ball(), hole(), m.p).v);
+  // 비교용: 옆 점들을 깊이로만 / 특징점으로만 잰 경우 (공·홀은 늘 둘레 깊이)
+  const alt = k => marks.slice(2).every(m => m[k]) ? GR.fitPoints(marks.map((m, i) => i < 2 ? m.p : m[k])) : null;
+  info.planeD = alt('pD'); info.planeP = alt('pP');
+  resultPlane = plane; resultInfo = info;
 }
 
 const pct = p => p ? (Math.hypot(p.a, p.b) * 100).toFixed(1) + '%' : '-';
-const STEP_TEXT = [
-  ['① 공 바로 옆 잔디를 눌러 주세요', '공과 홀이 화면에 다 보이게 들고, 처음 2~3초는 좌우로 살짝 움직여요'],
-  ['② 홀 바로 앞(내 쪽) 잔디를 눌러 주세요', '깃대나 홀 구멍 말고 그 앞 잔디'],
-  ['③ 라인 왼쪽 잔디를 눌러 주세요', '공과 홀 사이 가운데쯤, 라인에서 반 걸음~한 걸음 왼쪽'],
-  ['④ 라인 오른쪽 잔디를 눌러 주세요', '③과 마주 보는 오른쪽'],
-  ['다 찍었어요', '구슬이 굴러가는 쪽이 낮은 쪽 · [저장]으로 숫자를 남겨요'],
-];
+function stepText() {
+  const n = marks.length;
+  if (n === 0) return ['① 공을 눌러 주세요', '공과 홀이 화면에 다 보이게 들고, 처음 2~3초는 좌우로 살짝 움직여요'];
+  if (n === 1) return ['② 홀(깃대 밑동)을 눌러 주세요', '홀 둘레 잔디 높이로 재요'];
+  if (n === 2) return ['③ 라인 왼쪽 잔디를 눌러 주세요', '공과 홀 사이 가운데쯤, 라인에서 반 걸음~한 걸음 왼쪽'];
+  if (n === 3) return ['④ 라인 오른쪽 잔디를 눌러 주세요', '③과 마주 보는 오른쪽'];
+  return [`점 ${n}개 · 더 찍거나 [저장]`, '원하는 곳을 더 찍을수록 정확해요 · 다 찍었으면 [저장]'];
+}
 
 // 화면 글씨를 지금 상태에 맞게 (점을 찍거나 지울 때만)
 function refresh() {
-  const [main, meta] = STEP_TEXT[marks.length];
+  const [main, meta] = stepText();
   $('hudMain').textContent = main; $('hudMeta').textContent = meta;
+  $('bSave').className = marks.length >= MIN_MARKS && resultPlane ? 'go' : 'dim';
   const box = $('result');
   if (marks.length < 2) { box.style.display = 'none'; return; }
   box.style.display = 'block';
-  if (marks.length === ORDER.length) {
+  if (marks.length >= MIN_MARKS) {
     box.innerHTML = resultInfo ? resultText(resultInfo, false)
-      : `${twoPointText(false)}<br><span class="warn">옆 점이 라인과 거의 한 줄이라 옆 경사를 못 구했어요. [한 점 취소] 후 라인에서 더 옆을 찍어 주세요</span>`;
+      : `${twoPointText(false)}<br><span class="warn">옆 점이 라인과 거의 한 줄이라 옆 경사를 못 구했어요. 라인에서 더 옆을 찍어 주세요</span>`;
   } else {
-    box.innerHTML = twoPointText(false) + `<br><span class="meta">${marks.length === 2 ? '옆 점 2개를 더 찍으면 옆 경사와 구슬 지도가 나와요' : '한 점 더'}</span>`;
+    box.innerHTML = twoPointText(false) + `<br><span class="meta">${marks.length === 2 ? '옆 점 2개를 더 찍으면 옆 경사가 나와요' : '한 점 더'}</span>`;
   }
 }
 
@@ -426,36 +485,155 @@ function twoPointText(plain) {
   const up = Math.abs(p) < 0.3 ? '거의 평평' : `${p > 0 ? '오르막' : '내리막'} 약 ${Math.abs(p).toFixed(1)}% · 홀이 ${Math.round(Math.abs(rise) * 100)}cm ${p > 0 ? '높음' : '낮음'}`;
   return plain ? `거리 ${dist.toFixed(1)}m · ${up} (공·홀 두 점)` : `거리 <b>${dist.toFixed(1)}m</b> · ${up}`;
 }
-function marksText() {
-  const name = { ball: '공', hole: '홀', side: '옆' };
-  return marks.map(m => `${name[m.kind]} ${m.dist.toFixed(1)}m ±${m.spread.toFixed(1)}cm(${m.src}${m.pD && m.pP ? ', 깊이−특징점 높이 ' + Math.round((m.pD[1] - m.pP[1]) * 100) + 'cm' : ''})`).join(' / ');
+function marksText(list, plane) {
+  return list.map((m, i) => {
+    const r = plane ? ` 면에서 ${Math.round((m.p[1] - (plane.a * m.p[0] + plane.b * m.p[2] + plane.c)) * 1000) / 10}cm` : '';
+    const dp = m.pD && m.pP ? `, 깊이−특징점 ${Math.round((m.pD[1] - m.pP[1]) * 100)}cm` : '';
+    return `${markLabel(i)} ${m.dist.toFixed(1)}m ±${m.spread.toFixed(1)}cm(${m.src}${dp})${r}`;
+  }).join(' / ');
 }
-
-function resultText(i, plain) {
+function slopeLines(i) {
   const flat = Math.abs(i.alongPct) < 0.3;
   const up = flat ? '거의 평평' : (i.alongPct > 0
     ? `오르막 ${i.alongPct.toFixed(1)}% · 홀이 ${Math.round(i.rise * 100)}cm 높음`
     : `내리막 ${(-i.alongPct).toFixed(1)}% · 홀이 ${Math.round(-i.rise * 100)}cm 낮음`);
   const side = i.sidePct < 0.3 ? '옆 경사 거의 없음'
     : `옆 경사 ${i.sidePct.toFixed(1)}% · ${i.breakTo === 'right' ? '오른쪽으로 휨 (왼쪽이 높음)' : '왼쪽으로 휨 (오른쪽이 높음)'}`;
-  const meta = `네 점 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 옆 점 ${i.sides.map(v => (v < 0 ? '왼' : '오') + Math.abs(v).toFixed(1) + 'm').join(' ')}` +
-    ` · 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)} · 중력 차이 ${gravityAngleText()}`;
-  const warns = [];
-  if (i.sides.every(v => Math.abs(v) < SIDE_MIN)) warns.push('옆 점이 라인에 너무 가까워요. 라인에서 반 걸음 이상 옆을 찍으면 더 정확해요');
-  else if (i.sides[0] * i.sides[1] > 0) warns.push('옆 점 두 개가 같은 쪽에 있어요. 왼쪽 하나·오른쪽 하나가 좋아요');
-  if (marks.some(m => m.dist > FAR_WARN)) warns.push(`${FAR_WARN}m보다 먼 점이 있어요. 멀수록 덜 정확해요`);
-  if (plain) return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n(${meta})\n(${marksText()})${warns.length ? '\n' + warns.join('\n') : ''}`;
+  return [up, side];
+}
+function warnsOf(i, list) {
+  const w = [];
+  if (i.sides.every(v => Math.abs(v) < SIDE_MIN)) w.push('옆 점이 라인에 너무 가까워요. 라인에서 반 걸음 이상 옆을 찍으면 더 정확해요');
+  else if (i.sides.every(v => v > 0) || i.sides.every(v => v < 0)) w.push('옆 점이 모두 한쪽에 있어요. 왼쪽·오른쪽 둘 다 찍어 주세요');
+  if (list.some(m => m.dist > FAR_WARN)) w.push(`${FAR_WARN}m보다 먼 점이 있어요. 멀수록 덜 정확해요`);
+  return w;
+}
+function resultText(i, plain, list) {
+  list = list || marks;
+  const [up, side] = slopeLines(i), warns = warnsOf(i, list);
+  const meta = `점 ${i.n}개 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 옆 점 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)} · 중력 차이 ${gravityAngleText()}`;
+  if (plain) return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n(${meta})\n(${marksText(list, i.plane)})${warns.length ? '\n' + warns.join('\n') : ''}`;
   // 화면에는 짧게(공을 가리지 않게). 점별 자세한 숫자는 [저장]한 기록에 남는다.
-  return `거리 <b>${i.dist.toFixed(1)}m</b><br>${up}<br>${side}` +
-    warns.map(w => `<br><span class="warn">${w}</span>`).join('') +
-    `<br><span class="meta">네 점 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)}</span>`;
+  return `거리 <b>${i.dist.toFixed(1)}m</b><br>${up}<br>${side}` + warns.map(w => `<br><span class="warn">${w}</span>`).join('') +
+    `<br><span class="meta">점 ${i.n}개 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)}</span>`;
+}
+// 유도선 안내: 어디를 보고, 얼마나 세게
+function aimText(pt) {
+  if (!pt) return '경사가 너무 심해 넣을 길을 못 찾았어요';
+  const cm = Math.abs(pt.side) * 100, cups = Math.abs(pt.cups);
+  const where = cm < 3 ? '홀 가운데' : `홀 ${pt.side > 0 ? '오른쪽' : '왼쪽'} ${cups < 0.95 ? cm.toFixed(0) + 'cm' : cups.toFixed(1) + '컵 (' + cm.toFixed(0) + 'cm)'}`;
+  return `${where} 보고 · 평지 ${pt.flat.toFixed(1)}m 치는 세기`;
 }
 
+// ── [저장]: 그 순간의 카메라 사진을 찍어 두고, AR을 끄고, 멈춘 화면에 결과를 그린다 ──
+function freeze(view) {
+  let photo = null;
+  try { photo = grabCamera(view); camState = photo ? '됨' : camState; } catch (e) { camState = '안 됨(' + (e && e.message || e) + ')'; }
+  const info = Object.assign({}, resultInfo, { plane: resultPlane });
+  still = { photo, proj: Array.from(view.projectionMatrix), viewMatrix: Array.from(view.transform.inverse.matrix),
+    marks: marks.map(m => Object.assign({}, m)), plane: resultPlane, info, stamp: new Date() };
+  still.putt = GR.puttLine(still.marks[0].p, still.marks[1].p, still.plane, stimp);
+  const stamp = still.stamp.toLocaleString('ko-KR', { hour12: false });
+  const text = `[${stamp}] 점 ${info.n}개 · 그린 빠르기 ${stimp.toFixed(1)}\n` + resultText(info, true, still.marks) + '\n유도선: ' + aimText(still.putt) + `\n(사진 ${camState})`;
+  const list = loadHist(); list.unshift({ t: still.stamp.getTime(), text }); saveHist(list.slice(0, 50));
+  session.end();              // → onSessionEnd → showStill()
+}
+
+// 카메라 그림(WebXR camera-access)을 2D 그림으로 옮긴다. 안 되는 휴대폰이면 null (그러면 검은 바탕에 그린다).
+let camProg = null, camBuf = null;
+function grabCamera(view) {
+  if (!glBinding || !view.camera) return null;
+  const tex = glBinding.getCameraImage(view.camera);
+  if (!tex) return null;
+  const w = view.camera.width, h = view.camera.height;
+  if (!camProg) {
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    camProg = gl.createProgram();
+    gl.attachShader(camProg, sh(gl.VERTEX_SHADER, 'attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }'));
+    gl.attachShader(camProg, sh(gl.FRAGMENT_SHADER, 'precision mediump float; varying vec2 uv; uniform sampler2D t; void main(){ gl_FragColor = texture2D(t, uv); }'));
+    gl.linkProgram(camProg);
+    camBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, camBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  }
+  const outTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, outTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outTex, 0);
+  gl.viewport(0, 0, w, h);
+  gl.useProgram(camProg);
+  gl.bindBuffer(gl.ARRAY_BUFFER, camBuf);
+  const loc = gl.getAttribLocation(camProg, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(gl.getUniformLocation(camProg, 't'), 0);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  const px = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, session.renderState.baseLayer.framebuffer);
+  gl.deleteFramebuffer(fb); gl.deleteTexture(outTex);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);   // 아래위 뒤집기
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+// ── 멈춘 화면 ──
+function showStill() {
+  showStillText();
+  dots.forEach(d => { d.on = false; });
+  lastT = 0; requestAnimationFrame(stillLoop);
+}
+function showStillText() {
+  document.querySelectorAll('#speedRow button').forEach(b => b.classList.toggle('on', Math.abs(parseFloat(b.dataset.s) - stimp) < 0.01));
+  const i = still.info, [up, side] = slopeLines(i);
+  const mini = $('stillTop').classList.contains('mini');
+  $('stillTop').innerHTML = `<div class="aim"><span class="fold">${mini ? '펼치기 ▼' : '접기 ▲'}</span>${aimText(still.putt).replace(' · ', '<br>')}</div>` +
+    `<div class="more">거리 <b>${i.dist.toFixed(1)}m</b> · ${up}<br>${side}` +
+    (still.photo ? '' : '<br><span class="meta">이 휴대폰에선 카메라 사진을 못 남겨서 검은 바탕에 그렸어요</span>') +
+    warnsOf(i, still.marks).map(w => `<br><span class="warn">${w}</span>`).join('') + '</div>';
+}
+function stillLoop(t) {
+  if (!still || !overlay.classList.contains('show-still')) return;
+  requestAnimationFrame(stillLoop);
+  const dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0; lastT = t;
+  drawScene($('stillCv'), still, still.marks, still.plane, still.info, dt, still.photo, still.putt);
+}
+document.querySelectorAll('#speedRow button').forEach(b => b.onclick = () => {
+  stimp = parseFloat(b.dataset.s);
+  try { localStorage.setItem('green-reader-stimp', String(stimp)); } catch {}
+  if (still) { still.putt = GR.puttLine(still.marks[0].p, still.marks[1].p, still.plane, stimp); showStillText(); }
+});
+$('stillTop').onclick = () => { $('stillTop').classList.toggle('mini'); if (still) showStillText(); };
+function leaveStill() { still = null; overlay.classList.remove('show-still'); showHist(); }
+$('sHome').onclick = () => { leaveStill(); setTimeout(checkUpdate, 300); };
+$('sAgain').onclick = () => { leaveStill(); startAR(); };
+$('sPhoto').onclick = () => {
+  if (!still) return;
+  const cv = $('stillCv'), out = document.createElement('canvas');
+  out.width = cv.width; out.height = cv.height;
+  const ctx = out.getContext('2d'), s = out.width / cv.clientWidth;
+  ctx.drawImage(cv, 0, 0);
+  const i = still.info, [up, side] = slopeLines(i);
+  const lines = [aimText(still.putt), `거리 ${i.dist.toFixed(1)}m · ${up}`, side,
+    `그린 빠르기 ${stimp.toFixed(1)} · ${still.stamp.toLocaleString('ko-KR', { hour12: false })}`];
+  ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(0, 0, out.width, (lines.length * 26 + 20) * s);
+  ctx.fillStyle = '#fff'; ctx.font = `bold ${18 * s}px system-ui`;
+  lines.forEach((l, k) => ctx.fillText(l, 14 * s, (32 + k * 26) * s));
+  out.toBlob(blob => {
+    if (!blob) { toast('사진을 만들지 못했어요. 화면 캡처를 써 주세요'); return; }
+    const a = document.createElement('a'), d = still.stamp;
+    a.href = URL.createObjectURL(blob);
+    a.download = `그린읽기-${d.getMonth() + 1}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast('사진을 저장했어요 (다운로드 폴더)');
+  }, 'image/png');
+};
+
 // ── 구슬: 퍼팅스타의 '경사 흐름 점'처럼 낮은 쪽으로 굴러간다 (1% → 초당 9cm, 최대 초당 90cm) ──
-// 네 점을 감싸는 띠(공 0.5m 뒤 ~ 홀 0.5m 뒤, 좌우는 옆 점까지 + 0.3m)에 뿌린다.
-function dotArea() {
-  const b = ball(), h = hole(), L = Math.hypot(h[0] - b[0], h[2] - b[2]);
-  const half = Math.max(0.6, ...resultInfo.sides.map(v => Math.abs(v) + 0.3));
+// 찍은 점들을 감싸는 띠(공 0.5m 뒤 ~ 홀 0.5m 뒤, 좌우는 가장 먼 옆 점 + 0.3m)에 뿌린다.
+function dotArea(list, info) {
+  const b = list[0].p, h = list[1].p, L = Math.hypot(h[0] - b[0], h[2] - b[2]);
+  const half = Math.min(1.5, Math.max(0.6, ...info.sides.map(v => Math.abs(v) + 0.3)));
   return { b, ux: (h[0] - b[0]) / L, uz: (h[2] - b[2]) / L, L, half };
 }
 function respawn(p, A, randomLife) {
@@ -468,35 +646,37 @@ function inArea(p, A) {
   return u > -0.7 && u < A.L + 0.7 && Math.abs(v) < A.half + 0.2;
 }
 
-// ── 화면 위에 점·구슬 그리기 (계산은 안 하고, 지금 카메라 자리에서 보이는 곳에 그리기만) ──
-function draw(dt) {
-  const cv = $('draw');
+// ── 그리기 (계산은 안 하고, 주어진 카메라 자리에서 보이는 곳에 그리기만) ──
+function drawAR(dt) { drawScene($('draw'), lastView, marks, resultPlane, resultInfo, dt, null, null); }
+function drawScene(cv, V, list, plane, info, dt, photo, putt) {
   const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
   const ctx = cv.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  if (!lastView) return;
-  const P = (x, y, z) => { const s = GR.project(x, y, z, lastView.proj, lastView.viewMatrix); return s ? [s[0] * W, s[1] * H, s[2]] : null; };
-  const focal = lastView.proj[5] * H / 2; // 1m 앞의 1m가 화면에서 몇 점인가
+  if (photo) ctx.drawImage(photo, 0, 0, W, H);
+  if (!V) return;
+  const P = (x, y, z) => { const s = GR.project(x, y, z, V.proj, V.viewMatrix); return s ? [s[0] * W, s[1] * H, s[2]] : null; };
+  const gy = (x, z) => plane ? plane.a * x + plane.b * z + plane.c : (list[0] ? list[0].p[1] : 0);
+  const focal = V.proj[5] * H / 2; // 1m 앞의 1m가 화면에서 몇 점인가
 
   // 공→홀 선 (옅게)
-  if (marks.length >= 2) {
-    const a = P(...ball()), b = P(...hole());
+  if (list.length >= 2) {
+    const a = P(...list[0].p), b = P(...list[1].p);
     if (a && b) { ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 2; ctx.setLineDash([8, 8]); line(ctx, a, b); ctx.setLineDash([]); }
   }
 
   // 구슬
-  if (resultPlane) {
-    const A = dotArea(), pl = resultPlane;
-    const m = Math.hypot(pl.a, pl.b), k = Math.min(0.9, m * 9) / (m || 1);
+  if (plane && info) {
+    const A = dotArea(list, info);
+    const m = Math.hypot(plane.a, plane.b), k = Math.min(0.9, m * 9) / (m || 1);
     for (const p of dots) {
       if (!p.on) respawn(p, A, true);
-      p.x -= pl.a * k * dt; p.z -= pl.b * k * dt; p.life -= dt;
+      p.x -= plane.a * k * dt; p.z -= plane.b * k * dt; p.life -= dt;
       if (p.life <= 0 || !inArea(p, A)) { respawn(p, A, false); continue; }
-      const s = P(p.x, pl.a * p.x + pl.b * p.z + pl.c + 0.015, p.z);
+      const s = P(p.x, gy(p.x, p.z) + 0.015, p.z);
       if (!s) continue;
-      const alpha = Math.min(1, (p.max - p.life) * 2, p.life * 2) * Math.min(1, m / 0.004) * 0.9;
+      const alpha = Math.min(1, (p.max - p.life) * 2, p.life * 2) * Math.min(1, m / 0.004) * (putt ? 0.6 : 0.9);
       if (alpha <= 0.02) continue;
       const r = Math.max(2, Math.min(9, 0.014 * focal / s[2]));
       ctx.beginPath(); ctx.arc(s[0], s[1], r, 0, Math.PI * 2);
@@ -505,11 +685,28 @@ function draw(dt) {
     }
   }
 
-  const label = ['공', '홀', '③', '④'], color = ['#ffffff', '#222222', '#ffd34d', '#ffd34d'];
-  marks.forEach((m, i) => marker(ctx, P(...m.p), color[i], label[i], i < 2 ? 12 : 9));
+  // 유도선: 노란 조준선(공 → 겨냥점) + 흰 예상 경로(공 → 홀)
+  if (putt) {
+    const b = list[0].p, aimS = P(putt.aim[0], gy(putt.aim[0], putt.aim[1]) + 0.01, putt.aim[1]), b0 = P(b[0], gy(b[0], b[2]) + 0.01, b[2]);
+    if (aimS && b0) {
+      ctx.strokeStyle = 'rgba(255,211,77,.95)'; ctx.lineWidth = 3; ctx.setLineDash([12, 8]); line(ctx, b0, aimS); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(aimS[0], aimS[1], 8, 0, Math.PI * 2); ctx.fillStyle = '#ffd34d'; ctx.fill();
+    }
+    ctx.beginPath(); let started = false;
+    for (const q of putt.path) {
+      const s = P(q[0], gy(q[0], q[1]) + 0.01, q[1]);
+      if (!s) { started = false; continue; }
+      if (!started) { ctx.moveTo(s[0], s[1]); started = true; } else ctx.lineTo(s[0], s[1]);
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 7; ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.stroke();
+  }
+
+  const color = i => i === 0 ? '#ffffff' : i === 1 ? '#222222' : '#ffd34d';
+  list.forEach((m, i) => marker(ctx, P(...m.p), color(i), markLabel(i), i < 2 ? 12 : 8));
 
   // 재는 중인 자리: 노란 고리
-  if (measuring) {
+  if (measuring && V === lastView) {
     const s = measuring.est ? P(...measuring.est) : [measuring.nx * W, measuring.ny * H];
     if (s) {
       const r = 14 + 6 * Math.sin(lastT / 120);
