@@ -78,7 +78,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 7-2 · 판 362d07a 10/16 14:36 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 7-3 · 판 26281df 10/16 15:04 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -154,15 +154,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=362d07a-1016053643"></script>
+<script src="slope.js?v=26281df-1016060458"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 362d07a-1016053643를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 26281df-1016060458를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = '362d07a-1016053643';
+const BUILD_ID = '26281df-1016060458';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -567,7 +567,8 @@ function recordText(i, list) {
   const [up, side] = slopeLines(i), warns = warnsOf(i, list);
   const meta = `${i.src} 칸 ${i.nUsed}/${i.nAll}개 씀 (특징점 ${i.nP} · 깊이 ${i.nD}) · 라인 비춤 ${Math.round(i.cover * 100)}% · 어긋남 ±${(i.rms * 100).toFixed(1)}cm` +
     ` · 특징점으로만 ${pct(i.planeP)} / 깊이로만 ${pct(i.planeD)} · 중력 차이 ${gravityAngleText()}` +
-    (i.upDiff ? ` · 센서−AR 위(휴대폰 기준) 좌우 ${pctS(i.upDiff[0])} 앞뒤 ${pctS(i.upDiff[2])}` : '');
+    (i.upDiff ? ` · 센서−AR 위(휴대폰 기준) 좌우 ${pctS(i.upDiff[0])} 앞뒤 ${pctS(i.upDiff[2])}` : '') +
+    (i.sensor ? ` · 센서 위 기준이면 오르막 ${pctS(i.sensor.along / 100)} · 옆 ${pctS(i.sensor.side / 100)}(오른쪽이 높으면 +)` : '');
   const pts = list.map((m, k) => `${markLabel(k)} ${m.dist.toFixed(1)}m(${m.src})`).join(' / ');
   return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n${trustText(i)}\n(${meta})\n(${pts})${warns.length ? '\n' + warns.join('\n') : ''}`;
 }
@@ -601,6 +602,14 @@ function freeze(view) {
   try { photo = grabCamera(view); camState = photo ? '됨' : camState; } catch (e) { camState = '안 됨(' + (e && e.message || e) + ')'; }
   const { plane, info } = computed;
   info.upDiff = upDiffEma ? upDiffEma.slice() : null;
+  // 비교용: AR의 '위' 대신 휴대폰 센서가 본 '위'(upEma, 세계 좌표)를 기준으로 다시 잰 경사. AR 위가 센서 위보다 ux만큼 +x 쪽으로 기울었으면
+  // AR에서 평평한 면이 a = −ux/uy로 보이므로, 센서 기준 기울기 = a + ux/uy (z도 같게). 10/16 두 기록에서 옆 경사가 늘 같은 쪽으로 0.6~0.9% 틀려서,
+  // 어느 '위'가 정답(수평계)에 더 가까운지 기록으로 가리려고.
+  if (upEma) {
+    const n = Math.hypot(upEma[0], upEma[1], upEma[2]), ux = upEma[0] / n, uy = upEma[1] / n, uz = upEma[2] / n;
+    const i2 = GR.analyze(info.ballP, info.holeP, { a: plane.a + ux / uy, b: plane.b + uz / uy, c: plane.c });
+    info.sensor = { along: i2.alongPct, side: i2.breakTo === 'left' ? i2.sidePct : -i2.sidePct };
+  }
   still = { photo, proj: Array.from(view.projectionMatrix), viewMatrix: Array.from(view.transform.inverse.matrix),
     marks: [{ ...marks[0], p: info.ballP }, { ...marks[1], p: info.holeP }], plane, info, stamp: new Date() };
   newPutt();
@@ -777,11 +786,14 @@ function lvResult() {
   const upTxt = v => Math.abs(v) < 0.003 ? '거의 평평' : `${v > 0 ? '오르막' : '내리막'} ${Math.abs(v * 100).toFixed(1)}%`;
   let html = `정답(수평계, ${n}군데): <b>${upTxt(along)}</b> · 옆 <b>${sideTxt(side)}</b>`;
   if (i) html += `<br>카메라: ${upTxt(camAlong)} · 옆 ${sideTxt(camSide)}<br>차이(카메라 − 정답): 오르막 <b>${pctS(camAlong - along)}</b> · 옆 <b>${pctS(camSide - side)}</b>`;
+  const sen = i && i.sensor ? { along: i.sensor.along / 100, side: i.sensor.side / 100 } : null;
+  if (sen) html += `<br><span style="color:var(--dim);font-size:14px">센서 위 기준 카메라와의 차이: 오르막 ${pctS(sen.along - along)} · 옆 ${pctS(sen.side - side)}</span>`;
   html += `<br><span style="color:var(--dim);font-size:14px">휴대폰 치우침(뒤집어 재서 지운 값): 앞뒤 ${pctS(by)} · 좌우 ${pctS(bx)}</span>`;
   $('lvDone').innerHTML = html;
   const stamp = new Date().toLocaleString('ko-KR', { hour12: false });
   const text = `[${stamp}] 정답 재기(${n}군데): ${upTxt(along)} · 옆 ${sideTxt(side)}` +
     (i ? ` / 카메라: ${upTxt(camAlong)} · 옆 ${sideTxt(camSide)} / 차이 오르막 ${pctS(camAlong - along)} · 옆 ${pctS(camSide - side)} (거리 ${i.dist.toFixed(1)}m, ${i.src} 칸 ${i.nUsed}개)` : '') +
+    (sen ? ` / 센서 위 기준 차이 오르막 ${pctS(sen.along - along)} · 옆 ${pctS(sen.side - side)}` : '') +
     ` / 휴대폰 치우침 앞뒤 ${pctS(by)} · 좌우 ${pctS(bx)}` + lv.pairs.map((p, k) => ` / ${k + 1}번: ${pctS(p.along)}, 옆 ${pctS(p.side)}`).join('');
   const list = loadHist();
   if (lv.savedT && list[0] && list[0].t === lv.savedT) list[0].text = text; else { lv.savedT = Date.now(); list.unshift({ t: lv.savedT, text }); }
