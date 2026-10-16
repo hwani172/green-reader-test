@@ -21,6 +21,8 @@
     background: var(--accent); color: #1b1b1b; margin: 16px 0; }
   .big:disabled { background: #556; color: #ccd; }
   #support { color: var(--bad); font-size: 16px; }
+  #steps { white-space: pre-wrap; color: var(--dim); font-size: 14px; margin: 0; font-family: inherit; }
+  #ver { font-size: 14px; }
   #history pre { white-space: pre-wrap; font-size: 14px; margin: 6px 0; color: var(--dim); }
   .small-btn { font-size: 16px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--dim); background: transparent; color: var(--ink); margin-right: 8px; }
 
@@ -56,6 +58,8 @@
     <p class="sub">카메라로 비춰서 거리와 경사가 얼마나 맞는지 시험합니다.</p>
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
+    <pre id="steps"></pre>
+    <p class="sub" id="ver">시험판 2 (10/16) · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>① 먼저 집에서 (바닥 시험)</b>
@@ -156,26 +160,47 @@ function toast(msg, ms) {
 }
 
 // ── AR 시작/끝 ──
+// 시작 단계를 화면에 남긴다 (휴대폰에서 어디서 막혔는지 캡처로 알 수 있게)
+let starting = false;
+function step(msg) { $('steps').textContent += msg + '\n'; }
 $('go').onclick = async () => {
+  if (starting) return;               // 두 번 눌러도 한 번만 (허락 창을 기다리는 중에 또 누르면 "이미 켜져 있음" 오류가 남)
+  if (session) { try { await session.end(); } catch {} session = null; }
+  starting = true; $('go').disabled = true; $('go').textContent = 'AR 준비 중…';
+  $('support').textContent = ''; $('steps').textContent = '';
+  const slow = setTimeout(() => step('… 오래 걸려요. 휴대폰에 허락 창이 떴으면 "허용"을 눌러 주세요. ' +
+    '카카오톡 같은 앱 안에서 열었다면 오른쪽 위 ⋮ → "Chrome에서 열기"로 열어 주세요.'), 6000);
+  let s = null;
   try {
-    session = await navigator.xr.requestSession('immersive-ar', {
+    step('1. AR 요청');
+    s = await navigator.xr.requestSession('immersive-ar', {
       requiredFeatures: ['depth-sensing', 'dom-overlay'],
       domOverlay: { root: overlay },
       depthSensing: { usagePreference: ['cpu-optimized'], dataFormatPreference: ['luminance-alpha', 'float32'] },
     });
+    clearTimeout(slow);
+    step('2. AR 켜짐');
+    session = s;
+    s.addEventListener('end', () => { session = null; overlay.classList.remove('in-ar'); showHist(); step('AR 끝남'); });
+    const canvas = document.createElement('canvas');
+    gl = canvas.getContext('webgl', { xrCompatible: true, alpha: true });
+    if (!gl) throw new Error('WebGL을 만들지 못함');
+    if (gl.makeXRCompatible) await gl.makeXRCompatible();
+    s.updateRenderState({ baseLayer: new XRWebGLLayer(s, gl) });
+    step('3. 화면 준비');
+    refSpace = await s.requestReferenceSpace('local');
+    step('4. 위치 기준 준비');
+    overlay.classList.add('in-ar');
+    resetAll();
+    s.requestAnimationFrame(onFrame);
   } catch (e) {
-    $('support').textContent = 'AR을 시작하지 못했어요: ' + e.message;
-    return;
+    clearTimeout(slow);
+    $('support').textContent = 'AR을 시작하지 못했어요: ' + (e && e.message || e);
+    if (s) { try { await s.end(); } catch {} }
+    session = null; overlay.classList.remove('in-ar');
+  } finally {
+    starting = false; $('go').disabled = false; $('go').textContent = '카메라 켜고 시작';
   }
-  overlay.classList.add('in-ar');
-  const canvas = document.createElement('canvas');
-  gl = canvas.getContext('webgl', { xrCompatible: true, alpha: true });
-  if (gl.makeXRCompatible) await gl.makeXRCompatible();
-  session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
-  refSpace = await session.requestReferenceSpace('local');
-  session.addEventListener('end', () => { session = null; overlay.classList.remove('in-ar'); showHist(); });
-  resetAll();
-  session.requestAnimationFrame(onFrame);
 };
 // 단추를 누를 때 AR '선택' 동작이 같이 일어나지 않게
 overlay.addEventListener('beforexrselect', e => e.preventDefault());
