@@ -208,7 +208,48 @@
     return plane ? [plane.a, plane.b] : [0, 0];
   }
 
-  const api = { mat4Invert, mat4MulVec, unproject, project, Grid, fitPlane, cellsNear, cellsInCorridor, coverage, analyze, gradientField, gradAt };
+  // ── 시험판 4: 화면에서 찍은 점 4개(공·홀·옆 2개)로 재기 ──
+
+  // 화면 위치(0~1) → 세계 좌표 광선 {o: 카메라 자리, d: 그 화면 점을 지나는 방향(길이 1)}
+  function screenRay(nx, ny, invProj, camMatrix) {
+    const p = unproject(nx, ny, 1, invProj, camMatrix);
+    const o = [camMatrix[12], camMatrix[13], camMatrix[14]];
+    const d = [p[0] - o[0], p[1] - o[1], p[2] - o[2]], l = Math.hypot(d[0], d[1], d[2]);
+    return { o, d: [d[0] / l, d[1] / l, d[2] / l] };
+  }
+
+  // 찍은 점 몇 개([x,y,z], 3개 이상)를 지나는 면 y = a·x + b·z + c. 점이 적으니 걸러 내지 않는다.
+  // 점들이 거의 한 줄에 있으면 옆 기울기를 알 수 없어서 null.
+  function fitPoints(pts) {
+    const n = pts.length;
+    if (n < 3) return null;
+    let mx = 0, my = 0, mz = 0;
+    for (const p of pts) { mx += p[0]; my += p[1]; mz += p[2]; }
+    mx /= n; my /= n; mz /= n;
+    let sxx = 0, sxz = 0, szz = 0, sxy = 0, szy = 0;
+    for (const p of pts) {
+      const x = p[0] - mx, y = p[1] - my, z = p[2] - mz;
+      sxx += x * x; sxz += x * z; szz += z * z; sxy += x * y; szy += z * y;
+    }
+    const det = sxx * szz - sxz * sxz;
+    if (!(det > 1e-4 * (sxx + szz) ** 2)) return null;
+    const a = (sxy * szz - szy * sxz) / det;
+    const b = (szy * sxx - sxy * sxz) / det;
+    const c = my - a * mx - b * mz;
+    let ss = 0;
+    for (const p of pts) { const r = p[1] - (a * p[0] + b * p[2] + c); ss += r * r; }
+    return { a, b, c, rms: Math.sqrt(ss / n), n };
+  }
+
+  // 점 p가 공→홀 선에서 어디쯤인가: u = 공에서 홀 쪽으로 몇 m, v = 선에서 오른쪽으로 몇 m(왼쪽이면 −)
+  function lineOffset(ball, hole, p) {
+    const dx = hole[0] - ball[0], dz = hole[2] - ball[2], L = Math.hypot(dx, dz) || 1;
+    const ux = dx / L, uz = dz / L, px = p[0] - ball[0], pz = p[2] - ball[2];
+    return { u: px * ux + pz * uz, v: -px * uz + pz * ux };
+  }
+
+  const api = { mat4Invert, mat4MulVec, unproject, project, Grid, fitPlane, cellsNear, cellsInCorridor, coverage, analyze, gradientField, gradAt,
+    screenRay, fitPoints, lineOffset };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GR = api;
 })(this);
