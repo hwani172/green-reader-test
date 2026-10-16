@@ -78,7 +78,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 7-3 · 판 26281df 10/16 15:04 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 7-4 · 판 8c8bec1 10/16 15:15 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -89,6 +89,7 @@
         <li>점이 모자라면 "사이를 더 비춰 주세요"가 떠요 → 조금 더 비춘 뒤 <b>[계산]</b>.</li>
         <li>화면 아래 <b>"바닥 무늬 잡힘"</b>이 초록이면 잴 수 있는 바닥, 빨강이면 카메라가 바닥을 못 보는 곳(민무늬 바닥)이에요.</li>
         <li>경사 옆 <b>±</b>는 "이만큼 틀릴 수 있다"는 뜻. 신호등(초록·노랑·빨강)으로 믿을 만한 정도를 보여 줘요.</li>
+        <li><b>자동 보정</b>: [정답 재기]를 3번 하면, 그 휴대폰이 늘 같은 쪽으로 틀리는 만큼을 앱이 기억했다가 다음부터 자동으로 빼 줘요(맨 아래 "휴대폰 보정").</li>
         <li><b>[정답 재기]</b>(시험용): 결과 화면에서 누르고, 휴대폰을 라인 위(퍼터 샤프트·자 위)에 <b>화면이 위로, 윗부분이 홀 쪽</b>으로 눕혀요 →
           1.5초 가만히 두면 저절로 잼 → <b>180도 돌려(윗부분이 공 쪽)</b> 한 번 더. 카메라 결과와 나란히 기록돼요.</li>
       </ol>
@@ -99,6 +100,12 @@
         <li>민무늬 바닥(사무실·마루)은 카메라가 못 봐요. <b>신문지·잡지·무늬 깔개</b>를 바닥에 넓게 펼쳐 주세요.</li>
         <li>가까운 쪽 신문지를 공, 먼 쪽을 홀로 보고 눌러요. 평평한 바닥이니 <b>0%에 가깝게</b> 나오면 좋아요.</li>
       </ol>
+    </div>
+    <div class="card" id="calibCard">
+      <b>휴대폰 보정</b>
+      <div id="calibText" style="font-size:15px;color:var(--dim)"></div>
+      <button class="small-btn" id="calibToggle">보정 끄기</button>
+      <button class="small-btn" id="calibClear">보정 지우기</button>
     </div>
     <div class="card" id="history">
       <b>저장한 기록</b>
@@ -154,15 +161,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=26281df-1016060458"></script>
+<script src="slope.js?v=8c8bec1-1016061525"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 26281df-1016060458를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 8c8bec1-1016061525를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = '26281df-1016060458';
+const BUILD_ID = '8c8bec1-1016061525';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -231,6 +238,7 @@ $('copyHist').onclick = async () => {
 };
 $('clearHist').onclick = () => { if (confirm('기록을 모두 지울까요?')) { saveHist([]); showHist(); } };
 showHist();
+setTimeout(showCalib, 0);
 
 // ── 지원 확인 ──
 (async () => {
@@ -487,7 +495,8 @@ function compute() {
   const cD = GR.cellsInCorridor(gridD.cells(3, 0.05, 2), b, h, 1.0, 0.5).filter(away);
   const planeP = cP.length >= MIN_CELLS_P ? GR.fitPlane(cP) : null;
   const planeD = cD.length >= MIN_CELLS_D ? GR.fitPlane(cD) : null;
-  const plane = planeP || planeD, cells = planeP ? cP : cD;
+  let plane = planeP || planeD;
+  const cells = planeP ? cP : cD;
   if (!plane) return { err: cP.length + cD.length ? 'few' : 'none', nP: cP.length, nD: cD.length };
   // 면에서 크게 벗어난 칸(튄 칸)은 버린 것으로 본다 — fitPlane이 버리는 기준과 같게
   const lim = Math.max(2.5 * plane.rms, 0.015);
@@ -502,6 +511,17 @@ function compute() {
   info.planeP = planeP; info.planeD = planeD; info.plane = plane;
   info.cells = used.slice(0, 400).map(c => [c.x, c.y, c.z]);
   info.sides = [-0.9, 0.9];
+  // 보정 전 값(정답 재기에서 보정값을 쌓을 때 이걸 쓴다 — 보정한 값으로 쌓으면 보정이 보정을 먹음)
+  info.raw = { along: info.alongPct, side: info.breakTo === 'left' ? info.sidePct : -info.sidePct };
+  info.planeRaw = plane;
+  // 휴대폰별 자동 보정: 정답 재기가 3번 이상 쌓였고 켜져 있으면, 그 가운데 값만큼 면 기울기에서 뺀다
+  const cal = calibNow();
+  if (cal.on) {
+    plane = GR.applyCalib(plane, b, h, cal.dA, cal.dS);
+    Object.assign(info, GR.analyze(b, h, plane));
+    info.calib = cal;
+  }
+  info.plane = plane;
   // 공·홀 높이는 면 위로 맞춘다 (그림 그리기용 — 경사 계산은 면으로 함)
   info.ballP = [b[0], plane.a * b[0] + plane.b * b[2] + plane.c + 0.021, b[2]];
   info.holeP = [h[0], plane.a * h[0] + plane.b * h[2] + plane.c, h[2]];
@@ -570,7 +590,7 @@ function recordText(i, list) {
     (i.upDiff ? ` · 센서−AR 위(휴대폰 기준) 좌우 ${pctS(i.upDiff[0])} 앞뒤 ${pctS(i.upDiff[2])}` : '') +
     (i.sensor ? ` · 센서 위 기준이면 오르막 ${pctS(i.sensor.along / 100)} · 옆 ${pctS(i.sensor.side / 100)}(오른쪽이 높으면 +)` : '');
   const pts = list.map((m, k) => `${markLabel(k)} ${m.dist.toFixed(1)}m(${m.src})`).join(' / ');
-  return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n${trustText(i)}\n(${meta})\n(${pts})${warns.length ? '\n' + warns.join('\n') : ''}`;
+  return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n${trustText(i)}\n(${calibLine(i)})\n(${meta})\n(${pts})${warns.length ? '\n' + warns.join('\n') : ''}`;
 }
 // 경사의 ± 만큼 옆 경사를 바꿔 보면 겨냥이 어디서 어디까지 달라지나 (컵, 오른쪽 +)
 function puttRange(b, h, plane, i) {
@@ -607,7 +627,8 @@ function freeze(view) {
   // 어느 '위'가 정답(수평계)에 더 가까운지 기록으로 가리려고.
   if (upEma) {
     const n = Math.hypot(upEma[0], upEma[1], upEma[2]), ux = upEma[0] / n, uy = upEma[1] / n, uz = upEma[2] / n;
-    const i2 = GR.analyze(info.ballP, info.holeP, { a: plane.a + ux / uy, b: plane.b + uz / uy, c: plane.c });
+    const pr = info.planeRaw || plane;
+    const i2 = GR.analyze(info.ballP, info.holeP, { a: pr.a + ux / uy, b: pr.b + uz / uy, c: pr.c });
     info.sensor = { along: i2.alongPct, side: i2.breakTo === 'left' ? i2.sidePct : -i2.sidePct };
   }
   still = { photo, proj: Array.from(view.projectionMatrix), viewMatrix: Array.from(view.transform.inverse.matrix),
@@ -670,7 +691,7 @@ function showStillText() {
   const mini = $('stillTop').classList.contains('mini');
   $('stillTop').innerHTML = `<div class="aim"><span class="fold">${mini ? '펼치기 ▼' : '접기 ▲'}</span>${aimText(still.putt).replace(' · ', '<br>')}<br><span style="font-size:15px">${trustText(i, true)}</span></div>` +
     `<div class="more">${still.range ? `<span class="meta">${rangeText(still.range)}</span><br>` : ''}거리 <b>${i.dist.toFixed(1)}m</b> · ${up}<br>${side}` +
-    `<br><span class="meta">${i.src} 칸 ${i.nUsed}개로 계산 · 라인 비춤 ${Math.round(i.cover * 100)}%</span>` +
+    `<br><span class="meta">${i.src} 칸 ${i.nUsed}개로 계산 · 라인 비춤 ${Math.round(i.cover * 100)}% · ${calibLine(i)}</span>` +
     (still.photo ? '' : '<br><span class="meta">이 휴대폰에선 카메라 사진을 못 남겨서 검은 바탕에 그렸어요</span>') +
     warnsOf(i, still.marks).map(w => `<br><span class="warn">${w}</span>`).join('') + '</div>';
 }
@@ -711,6 +732,39 @@ $('sPhoto').onclick = () => {
     toast('사진을 저장했어요 (다운로드 폴더)');
   }, 'image/png');
 };
+
+// ── 휴대폰별 자동 보정 (10/16 성환님 "자동 보정 기능을 넣어 줘") ──
+// 정답 재기마다 '카메라(보정 전) − 정답'을 이 휴대폰(이 브라우저 저장소)에 쌓고, 3번부터 최근 10번의 가운데 값을 카메라 결과에서 뺀다.
+const CKEY = 'green-reader-calib', CAL_MIN = 3;
+function calibLoad() { try { const c = JSON.parse(localStorage.getItem(CKEY) || 'null'); if (c && Array.isArray(c.samples)) return c; } catch {} return { samples: [], off: false }; }
+function calibSave(c) { try { localStorage.setItem(CKEY, JSON.stringify(c)); } catch {} }
+function calibNow() {
+  const c = calibLoad(), o = GR.calibOffset(c.samples, 10);
+  o.on = !c.off && o.n >= CAL_MIN;
+  return o;
+}
+function calibAdd(id, dA, dS, dist) {         // 같은 결과(id)면 바꿔 넣는다. 몇 번째인지 돌려줌
+  const c = calibLoad(), k = c.samples.findIndex(x => x.id === id), smp = { id, dA, dS, dist, t: Date.now() };
+  if (k >= 0) c.samples[k] = smp; else c.samples.push(smp);
+  c.samples = c.samples.slice(-30);
+  calibSave(c); showCalib();
+  return k >= 0 ? k + 1 : c.samples.length;
+}
+function calibLine(i) {
+  if (i.calib) return `보정 적용: 오르막 ${pctS(i.calib.dA)} · 옆 ${pctS(i.calib.dS)} 뺌(정답 재기 ${i.calib.n}번 가운데 값${i.calib.spread > 0.005 ? ', ⚠ 들쭉날쭉 ±' + (i.calib.spread * 100).toFixed(1) + '%' : ''}) · 보정 전 오르막 ${pctS(i.raw.along / 100)} · 옆 ${pctS(i.raw.side / 100)}`;
+  const o = calibNow();
+  return o.n >= CAL_MIN ? '보정 꺼짐' : `보정 없음(정답 재기 ${o.n}/${CAL_MIN}번)`;
+}
+function showCalib() {
+  const c = calibLoad(), o = calibNow();
+  $('calibText').innerHTML = !o.n ? '아직 없어요. 결과 화면의 [정답 재기]를 3번 하면 이 휴대폰에 맞게 자동으로 보정해요.'
+    : o.n < CAL_MIN ? `정답 재기 ${o.n}번 쌓임 — ${CAL_MIN - o.n}번 더 하면 보정이 켜져요.`
+    : `${o.on ? '<b style="color:#8fe39a">켜짐</b>' : '<b>꺼짐</b>'} · 정답 재기 ${c.samples.length}번 중 최근 ${o.n}번의 가운데 값: 오르막 ${pctS(o.dA)} · 옆 ${pctS(o.dS)}(오른쪽이 높으면 +)를 뺌` +
+      (o.spread > 0.005 ? `<br>⚠ 들쭉날쭉해요(±${(o.spread * 100).toFixed(1)}%) — 늘 같은 쪽으로 틀리는 게 아니면 보정이 잘 안 맞아요` : '');
+  $('calibToggle').textContent = c.off ? '보정 켜기' : '보정 끄기';
+}
+$('calibToggle').onclick = () => { const c = calibLoad(); c.off = !c.off; calibSave(c); showCalib(); };
+$('calibClear').onclick = () => { if (confirm('이 휴대폰의 보정값을 모두 지울까요?')) { calibSave({ samples: [], off: false }); showCalib(); } };
 
 // ── 정답 재기(수평계) ──
 // 10/16 성환님 "어 만들어 주고" (정확도 확인용 — 실제 앱엔 안 넣음. README "내려놓고 재는 방식은 안 씀"은 제품 얘기).
@@ -781,18 +835,27 @@ function lvResult() {
   const n = lv.pairs.length, avg = k => lv.pairs.reduce((a, p) => a + p[k], 0) / n;
   const along = avg('along'), side = avg('side'), by = avg('by'), bx = avg('bx');
   const i = still && still.info;
-  const camAlong = i ? i.alongPct / 100 : null, camSide = i ? (i.breakTo === 'left' ? i.sidePct : -i.sidePct) / 100 : null;
+  // 카메라 값은 '보정 전'으로 비교한다 (보정값을 쌓으려면). 보정 후 값은 따로 보여 준다.
+  const camAlong = i ? i.raw.along / 100 : null, camSide = i ? i.raw.side / 100 : null;
+  const fixAlong = i ? i.alongPct / 100 : null, fixSide = i ? (i.breakTo === 'left' ? i.sidePct : -i.sidePct) / 100 : null;
   const sideTxt = v => Math.abs(v) < 0.003 ? '거의 없음' : `${Math.abs(v * 100).toFixed(1)}% (${v > 0 ? '오른쪽' : '왼쪽'}이 높음)`;
   const upTxt = v => Math.abs(v) < 0.003 ? '거의 평평' : `${v > 0 ? '오르막' : '내리막'} ${Math.abs(v * 100).toFixed(1)}%`;
   let html = `정답(수평계, ${n}군데): <b>${upTxt(along)}</b> · 옆 <b>${sideTxt(side)}</b>`;
-  if (i) html += `<br>카메라: ${upTxt(camAlong)} · 옆 ${sideTxt(camSide)}<br>차이(카메라 − 정답): 오르막 <b>${pctS(camAlong - along)}</b> · 옆 <b>${pctS(camSide - side)}</b>`;
+  if (i) html += `<br>카메라(보정 전): ${upTxt(camAlong)} · 옆 ${sideTxt(camSide)}<br>차이(카메라 − 정답): 오르막 <b>${pctS(camAlong - along)}</b> · 옆 <b>${pctS(camSide - side)}</b>`;
+  if (i && i.calib) html += `<br>보정 후 차이: 오르막 <b>${pctS(fixAlong - along)}</b> · 옆 <b>${pctS(fixSide - side)}</b>`;
+  if (i) {                                  // 이 휴대폰 보정값에 쌓기 (같은 결과 화면에서 [한 군데 더] 하면 바꿔 넣음)
+    const c = calibAdd(still.stamp.getTime(), camAlong - along, camSide - side, i.dist), o = calibNow();
+    html += `<br><span style="color:#8fe39a">이 휴대폰 보정값에 넣었어요 (${c}번째). ` +
+      (o.n >= CAL_MIN ? `지금 보정값: 오르막 ${pctS(o.dA)} · 옆 ${pctS(o.dS)} 뺌${o.on ? '' : ' (꺼져 있음)'}` : `${CAL_MIN - o.n}번 더 하면 보정이 켜져요`) + '</span>';
+  }
   const sen = i && i.sensor ? { along: i.sensor.along / 100, side: i.sensor.side / 100 } : null;
   if (sen) html += `<br><span style="color:var(--dim);font-size:14px">센서 위 기준 카메라와의 차이: 오르막 ${pctS(sen.along - along)} · 옆 ${pctS(sen.side - side)}</span>`;
   html += `<br><span style="color:var(--dim);font-size:14px">휴대폰 치우침(뒤집어 재서 지운 값): 앞뒤 ${pctS(by)} · 좌우 ${pctS(bx)}</span>`;
   $('lvDone').innerHTML = html;
   const stamp = new Date().toLocaleString('ko-KR', { hour12: false });
   const text = `[${stamp}] 정답 재기(${n}군데): ${upTxt(along)} · 옆 ${sideTxt(side)}` +
-    (i ? ` / 카메라: ${upTxt(camAlong)} · 옆 ${sideTxt(camSide)} / 차이 오르막 ${pctS(camAlong - along)} · 옆 ${pctS(camSide - side)} (거리 ${i.dist.toFixed(1)}m, ${i.src} 칸 ${i.nUsed}개)` : '') +
+    (i ? ` / 카메라(보정 전): ${upTxt(camAlong)} · 옆 ${sideTxt(camSide)} / 차이 오르막 ${pctS(camAlong - along)} · 옆 ${pctS(camSide - side)} (거리 ${i.dist.toFixed(1)}m, ${i.src} 칸 ${i.nUsed}개)` : '') +
+    (i && i.calib ? ` / 보정 후 차이 오르막 ${pctS(fixAlong - along)} · 옆 ${pctS(fixSide - side)}` : '') +
     (sen ? ` / 센서 위 기준 차이 오르막 ${pctS(sen.along - along)} · 옆 ${pctS(sen.side - side)}` : '') +
     ` / 휴대폰 치우침 앞뒤 ${pctS(by)} · 좌우 ${pctS(bx)}` + lv.pairs.map((p, k) => ` / ${k + 1}번: ${pctS(p.along)}, 옆 ${pctS(p.side)}`).join('');
   const list = loadHist();

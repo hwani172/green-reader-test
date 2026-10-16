@@ -324,6 +324,26 @@
     return ys[ys.length >> 1];
   }
 
+  // ── 휴대폰별 자동 보정 (10/16 성환님 "자동 보정 기능을 넣어 줘") ──
+  // 정답 재기마다 쌓은 '카메라 − 정답'(공→홀 선 기준: 오르막 dA, 옆 dS(오른쪽이 높으면 +), 0.01 = 1%)의 가운데 값을 면 기울기에서 뺀다.
+  // 휴대폰을 세워 라인 쪽으로 들고 재므로 선 기준 ≈ 휴대폰 기준 → 휴대폰마다 늘 같은 쪽으로 틀리는 몫을 지운다.
+  function calibOffset(samples, maxN) {
+    const s = samples.slice(-(maxN || 10)), n = s.length;
+    if (!n) return { n: 0, dA: 0, dS: 0, spread: 0 };
+    const med = k => { const v = s.map(x => x[k]).sort((a, b) => a - b); return n % 2 ? v[n >> 1] : (v[n / 2 - 1] + v[n / 2]) / 2; };
+    const dA = med('dA'), dS = med('dS');
+    const spread = Math.sqrt(s.reduce((a, x) => a + (x.dA - dA) ** 2 + (x.dS - dS) ** 2, 0) / (2 * n));
+    return { n, dA, dS, spread };
+  }
+  // 면에서 오르막 dA·옆 dS만큼 빼기 (공 높이는 그대로)
+  function applyCalib(plane, ball, hole, dA, dS) {
+    const dx = hole[0] - ball[0], dz = hole[2] - ball[2], L = Math.hypot(dx, dz) || 1;
+    const ux = dx / L, uz = dz / L, rx = -uz, rz = ux;
+    const a = plane.a - dA * ux - dS * rx, b = plane.b - dA * uz - dS * rz;
+    const c = plane.c + (plane.a - a) * ball[0] + (plane.b - b) * ball[2];
+    return Object.assign({}, plane, { a, b, c });
+  }
+
   // 점 p가 공→홀 선에서 어디쯤인가: u = 공에서 홀 쪽으로 몇 m, v = 선에서 오른쪽으로 몇 m(왼쪽이면 −)
   function lineOffset(ball, hole, p) {
     const dx = hole[0] - ball[0], dz = hole[2] - ball[2], L = Math.hypot(dx, dz) || 1;
@@ -382,7 +402,7 @@
   }
 
   const api = { mat4Invert, mat4MulVec, unproject, project, Grid, fitPlane, cellsNear, cellsInCorridor, coverage, analyze, gradientField, gradAt,
-    screenRay, fitPoints, lineOffset, puttLine, decelOf, CUP, planeCov, slopeErr, fitRobust, locateOnRay, ringHeight };
+    screenRay, fitPoints, lineOffset, puttLine, decelOf, CUP, planeCov, slopeErr, fitRobust, locateOnRay, ringHeight, calibOffset, applyCalib };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GR = api;
 })(this);
