@@ -66,28 +66,34 @@
     this.size = size || 0.1;
     this.map = new Map();
   }
-  Grid.prototype.add = function (x, y, z) {
+  // frame: 몇 번째 장면에서 잡혔나(같은 장면에서 여러 번 맞은 것은 한 번으로 친다 → 여러 장면에서 거듭 본 칸만 믿으려고),
+  // dist: 카메라에서 얼마나 멀었나(멀수록 덜 믿는다). 둘 다 없어도 된다.
+  Grid.prototype.add = function (x, y, z, frame, dist) {
     const s = this.size;
     const key = Math.round(x / s) + ',' + Math.round(z / s);
     let c = this.map.get(key);
-    if (!c) { c = { sx: 0, sy: 0, sz: 0, syy: 0, n: 0 }; this.map.set(key, c); }
-    c.sx += x; c.sy += y; c.sz += z; c.syy += y * y; c.n++;
+    if (!c) { c = { sx: 0, sy: 0, sz: 0, syy: 0, n: 0, sd: 0, nf: 0, lf: null }; this.map.set(key, c); }
+    c.sx += x; c.sy += y; c.sz += z; c.syy += y * y; c.n++; c.sd += dist || 0;
+    if (frame == null || frame !== c.lf) { c.nf++; c.lf = frame; }
   };
   Grid.prototype.clear = function () { this.map.clear(); };
   // 칸마다 평균 위치와 높이 흔들림(표준편차). 점이 적거나 위아래로 넓게 퍼진 칸(깃대·사람 다리)은 뺀다.
   Grid.prototype.count = function () { return this.map.size; };
-  Grid.prototype.cells = function (minN, maxStd) {
+  // minFrames: 이만큼 다른 장면에서 잡힌 칸만 (기본 1 = 따지지 않음)
+  Grid.prototype.cells = function (minN, maxStd, minFrames) {
     const out = [];
-    minN = minN || 3; maxStd = maxStd || 0.05;
+    minN = minN || 3; maxStd = maxStd || 0.05; minFrames = minFrames || 1;
     for (const c of this.map.values()) {
-      if (c.n < minN) continue;
+      if (c.n < minN || c.nf < minFrames) continue;
       const my = c.sy / c.n;
       const std = Math.sqrt(Math.max(0, c.syy / c.n - my * my));
       if (std > maxStd) continue;
-      out.push({ x: c.sx / c.n, y: my, z: c.sz / c.n, n: c.n, std });
+      out.push({ x: c.sx / c.n, y: my, z: c.sz / c.n, n: c.n, std, d: c.sd / c.n, nf: c.nf });
     }
     return out;
   };
+  // 면 맞추기에서 칸 하나의 무게: 많이 잡힐수록(30번까지), 가까울수록(1m 넘으면 거리² 만큼 줄임) 더 믿는다
+  const cellW = p => Math.min(p.n, 30) / (p.d > 1 ? p.d * p.d : 1);
 
   // y = a·x + b·z + c 면을 맞춘다. 튀는 칸(공, 신발, 깃대 밑동)은 세 번 걸러 낸다.
   function fitPlane(cells) {
@@ -97,11 +103,11 @@
       if (use.length < 8) return res;
       // 원점을 가운데로 옮겨 계산을 안정시킨다
       let W = 0, mx = 0, mz = 0;
-      for (const p of use) { const w = Math.min(p.n, 30); W += w; mx += w * p.x; mz += w * p.z; }
+      for (const p of use) { const w = cellW(p); W += w; mx += w * p.x; mz += w * p.z; }
       mx /= W; mz /= W;
       let sxx = 0, sxz = 0, szz = 0, sx = 0, sz = 0, sxy = 0, szy = 0, sy = 0;
       for (const p of use) {
-        const w = Math.min(p.n, 30), x = p.x - mx, z = p.z - mz;
+        const w = cellW(p), x = p.x - mx, z = p.z - mz;
         sxx += w * x * x; sxz += w * x * z; szz += w * z * z; sx += w * x; sz += w * z;
         sxy += w * x * p.y; szy += w * z * p.y; sy += w * p.y;
       }

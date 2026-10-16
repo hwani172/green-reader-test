@@ -56,6 +56,17 @@
   #speedRow button { flex: 1; font-size: 15px; padding: 8px 2px; border-radius: 8px; border: 1px solid #cfd; background: transparent; color: #fff; }
   #speedRow button.on { background: var(--accent); color: #123; border-color: var(--accent); font-weight: 700; }
   #toast { position: absolute; left: 50%; bottom: 140px; transform: translateX(-50%); background: rgba(0,0,0,.75); padding: 10px 16px; border-radius: 10px; font-size: 17px; display: none; text-align: center; max-width: 90%; pointer-events: none; z-index: 5; }
+  /* ── 정답 재기(수평계) ── */
+  #level { display: none; position: absolute; inset: 0; background: var(--bg); overflow-y: auto; padding: 18px 16px 110px; }
+  #overlay.show-level #level { display: block; }
+  #overlay.show-level #start { display: none; }
+  #level h2 { margin: 6px 0 10px; font-size: 22px; }
+  .lv-step { font-size: 19px; line-height: 1.5; background: var(--card); border-radius: 14px; padding: 12px 14px; }
+  .lv-step b { color: var(--accent); }
+  #lvBubble { display: block; margin: 14px auto; width: 220px; height: 220px; }
+  .lv-live { text-align: center; font-size: 17px; color: var(--dim); line-height: 1.6; }
+  .lv-done { font-size: 17px; line-height: 1.6; margin-top: 10px; }
+  .lv-done b { color: var(--accent); }
   #debug { position: absolute; left: 12px; right: 12px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 66px); text-shadow: 0 0 3px #000; line-height: 1.4; font-size: 11px; pointer-events: none; }
 </style>
 </head>
@@ -67,7 +78,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 7 · 판 f0f544e 10/16 14:07 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 7-1 · 판 c67cf87 10/16 14:29 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -78,6 +89,8 @@
         <li>점이 모자라면 "사이를 더 비춰 주세요"가 떠요 → 조금 더 비춘 뒤 <b>[계산]</b>.</li>
         <li>화면 아래 <b>"바닥 무늬 잡힘"</b>이 초록이면 잴 수 있는 바닥, 빨강이면 카메라가 바닥을 못 보는 곳(민무늬 바닥)이에요.</li>
         <li>경사 옆 <b>±</b>는 "이만큼 틀릴 수 있다"는 뜻. 신호등(초록·노랑·빨강)으로 믿을 만한 정도를 보여 줘요.</li>
+        <li><b>[정답 재기]</b>(시험용): 결과 화면에서 누르고, 휴대폰을 라인 위(퍼터 샤프트·자 위)에 <b>화면이 위로, 윗부분이 홀 쪽</b>으로 눕혀요 →
+          1.5초 가만히 두면 저절로 잼 → <b>180도 돌려(윗부분이 공 쪽)</b> 한 번 더. 카메라 결과와 나란히 기록돼요.</li>
       </ol>
     </div>
     <div class="card">
@@ -120,22 +133,36 @@
     </div>
     <div class="bar">
       <button id="sPhoto">사진 저장</button>
+      <button id="sLevel">정답 재기</button>
       <button id="sAgain" class="go">다시 재기</button>
-      <button id="sHome">처음 화면</button>
+      <button id="sHome">처음</button>
+    </div>
+  </div>
+
+  <!-- 정답 재기: 휴대폰을 라인 위에 눕혀 기울기 센서로 실제 경사를 잰다 (정확도 확인용, 실제 앱엔 안 넣음) -->
+  <div id="level">
+    <h2>정답 재기 (수평계)</h2>
+    <div class="lv-step" id="lvStep"></div>
+    <canvas id="lvBubble" width="440" height="440"></canvas>
+    <div class="lv-live" id="lvLive"></div>
+    <div class="lv-done" id="lvDone"></div>
+    <div class="bar">
+      <button id="lvMore">한 군데 더</button>
+      <button id="lvBack" class="go">결과로 돌아가기</button>
     </div>
   </div>
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=f0f544e-1016050708"></script>
+<script src="slope.js?v=c67cf87-1016052950"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 f0f544e-1016050708를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 c67cf87-1016052950를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = 'f0f544e-1016050708';
+const BUILD_ID = 'c67cf87-1016052950';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -157,9 +184,13 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chec
 //   홀을 누르면 공→홀 띠(폭 2m)의 칸들로 면을 맞추고(튀는 칸은 버림), 사진을 찍어 멈춘 화면에 결과를 그린다.
 const NEAR_MIN = 0.3;
 const DEPTH_MAX = 4;                    // 깊이 점은 이 거리 안만 (멀면 크게 틀림 — 10/16 사무실 기록)
-const HIT_MAX = 8;                      // 특징점은 이 거리 안만
+const HIT_MAX = 7;                      // 특징점은 이 거리 안만
 const COLS = 16, ROWS = 24;             // 깊이 그림에서 뽑는 점 수
-const HCOLS = 6, HROWS = 9;             // 특징점 광선 수
+const HCOLS = 7, HROWS = 11;            // 특징점 광선 수 (시험판 7-1: 6×9 → 7×11, 더 촘촘히)
+// 시험판 7-1 (10/16 성환님 "점을 무수히 찍고 있잖아. 이걸 더 정확하게 하는 방법 좀 고민해 봐"):
+//  ① 켜거나 위치를 다시 찾은 뒤 1.5초는 버림(위치가 아직 자리 잡는 중) ② 휴대폰을 빨리 돌리거나 움직이는 장면은 버림(흐린 사진 → 틀린 점)
+//  ③ 두 장면 이상에서 거듭 잡힌 칸만 씀 ④ 면 맞출 때 가까운 칸을 더 믿음(slope.js cellW: 1m 넘으면 거리²만큼 덜)
+const WARMUP_MS = 1500, MAX_TURN = 1.0, MAX_MOVE = 0.8;   // 초당 1라디안(약 57°)·초당 0.8m보다 빠르면 그 장면은 안 모음
 const MIN_CELLS_P = 12, MIN_CELLS_D = 20;   // 면을 맞추는 데 필요한 칸 수 (특징점 / 깊이)
 const READY_CELLS = 25;                 // 이만큼 모이고
 const READY_SEC = 3;                    // 이만큼(초) 비춘 뒤에 "공을 눌러 주세요"
@@ -172,6 +203,7 @@ let hitSources = [], hitSetup = 'no', hitRate = [];   // hitRate: 장면마다 �
 let marks = [];               // [공, 홀]: { kind, p:[x,y,z], src, dist }
 let pendingTap = null;        // 누른 자리 — 다음 장면에서 처리 (그 장면의 깊이도 쓸 수 있게)
 let lastView = null;          // { proj, viewMatrix, cam }
+let frameNo = 0, goodSince = 0, prevCam = null, fastRate = [];
 let scanStart = 0, lastT = 0, lastHudT = 0, depthOk = false, camState = '-', wantShot = false, lostTrack = false;
 let still = null;             // 멈춘 화면: { photo, proj, viewMatrix, marks, plane, info, putt, range, stamp }
 let stimp = 2.7;              // 그린 빠르기(스팀프, m)
@@ -298,7 +330,7 @@ $('ar').addEventListener('click', e => {
 });
 function resetAll(clearPoints) {
   marks = []; pendingTap = null; wantShot = false;
-  if (clearPoints) { gridP.clear(); gridD.clear(); hitRate = []; scanStart = performance.now(); }
+  if (clearPoints) { gridP.clear(); gridD.clear(); hitRate = []; scanStart = performance.now(); goodSince = 0; prevCam = null; fastRate = []; }
   dots.forEach(d => { d.life = 0; d.on = false; });
   lastHudT = 0; refresh();
 }
@@ -357,7 +389,19 @@ function onFrame(t, frame) {
   let depth = null;
   try { depth = frame.getDepthInformation(view); } catch (e) { depth = null; }
   depthOk = false;
-  if (!lostTrack) {                       // 위치를 다시 찾는 중에 모은 점은 자리가 틀리므로 버린다
+  // 이 장면을 모아도 되나: 위치를 다시 찾는 중이 아니고, 자리 잡은 지 1.5초 넘었고, 휴대폰이 천천히 움직일 때만
+  frameNo++;
+  const now = performance.now(), cm = view.transform.matrix, pos = [cm[12], cm[13], cm[14]], fwd = [-cm[8], -cm[9], -cm[10]];
+  let fast = false;
+  if (prevCam && dt > 0) {
+    const turn = Math.acos(Math.min(1, fwd[0] * prevCam.fwd[0] + fwd[1] * prevCam.fwd[1] + fwd[2] * prevCam.fwd[2])) / dt;
+    const move = Math.hypot(pos[0] - prevCam.pos[0], pos[1] - prevCam.pos[1], pos[2] - prevCam.pos[2]) / dt;
+    fast = turn > MAX_TURN || move > MAX_MOVE;
+  }
+  prevCam = { pos, fwd };
+  fastRate.push(fast ? 1 : 0); if (fastRate.length > 30) fastRate.shift();
+  if (lostTrack || !goodSince) goodSince = lostTrack ? 0 : now;
+  if (!lostTrack && now - goodSince > WARMUP_MS && !fast) {
     if (depth) sampleDepth(depth, view);
     if (hitSources.length) sampleHits(frame, view);
   }
@@ -378,7 +422,7 @@ function sampleDepth(depth, view) {
     let d = 0; try { d = depth.getDepthInMeters(nx, ny); } catch {}
     if (!(d > NEAR_MIN && d < DEPTH_MAX)) continue;
     const p = GR.unproject(nx, ny, d, inv, cam);
-    gridD.add(p[0], p[1], p[2]); valid++;
+    gridD.add(p[0], p[1], p[2], frameNo, d); valid++;
   }
   depthOk = valid > COLS * ROWS * 0.2;
 }
@@ -392,7 +436,7 @@ function sampleHits(frame, view) {
     if (!p) continue;
     const q = p.transform.position, d = Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z);
     if (d < NEAR_MIN || d > HIT_MAX) continue;
-    gridP.add(q.x, q.y, q.z); hit++;
+    gridP.add(q.x, q.y, q.z, frameNo, d); hit++;
   }
   hitRate.push(hit / hitSources.length); if (hitRate.length > 30) hitRate.shift();
 }
@@ -404,7 +448,7 @@ function placeMark(tap, view, depth) {
   if (!inv) return;
   const cam = view.transform.matrix, ray = GR.screenRay(tap.nx, tap.ny, inv, cam);
   const kind = marks.length === 0 ? 'ball' : 'hole', lift = kind === 'ball' ? 0.021 : 0;
-  const cellsP = gridP.cells(2);
+  const cellsP = gridP.cells(2, 0.05, 2);
   let p = GR.locateOnRay(cellsP, ray, lift), src = '특징점';
   // 누른 자리 둘레에 특징점이 없으면(먼 홀): 모은 특징점 전체로 맞춘 바닥 면과 누른 광선이 만나는 곳.
   // 깊이 칸보다 먼저 — 깊이는 멀수록 짧게 나와 홀이 가깝게 잡힌다(가짜 AR로 확인: 4.1m가 2.1m로)
@@ -416,7 +460,7 @@ function placeMark(tap, view, depth) {
       if (t > NEAR_MIN && t < HIT_MAX * 1.5) { p = [o[0] + t * d[0], o[1] + t * d[1], o[2] + t * d[2]]; src = '특징점 면'; }
     }
   }
-  if (!p) { p = GR.locateOnRay(gridD.cells(3), ray, lift); src = '깊이'; }
+  if (!p) { p = GR.locateOnRay(gridD.cells(3, 0.05, 2), ray, lift); src = '깊이'; }
   if (!p && depth) {
     let d = 0; try { d = depth.getDepthInMeters(tap.nx, tap.ny); } catch {}
     if (d > NEAR_MIN && d < HIT_MAX) { p = GR.unproject(tap.nx, tap.ny, d, inv, cam); src = '깊이(한 장면)'; }
@@ -433,8 +477,8 @@ function placeMark(tap, view, depth) {
 function compute() {
   const b = marks[0].p, h = marks[1].p;
   const away = c => Math.hypot(c.x - b[0], c.z - b[2]) > 0.08 && Math.hypot(c.x - h[0], c.z - h[2]) > 0.1;
-  const cP = GR.cellsInCorridor(gridP.cells(2), b, h, 1.0, 0.5).filter(away);
-  const cD = GR.cellsInCorridor(gridD.cells(3), b, h, 1.0, 0.5).filter(away);
+  const cP = GR.cellsInCorridor(gridP.cells(2, 0.05, 2), b, h, 1.0, 0.5).filter(away);
+  const cD = GR.cellsInCorridor(gridD.cells(3, 0.05, 2), b, h, 1.0, 0.5).filter(away);
   const planeP = cP.length >= MIN_CELLS_P ? GR.fitPlane(cP) : null;
   const planeD = cD.length >= MIN_CELLS_D ? GR.fitPlane(cD) : null;
   const plane = planeP || planeD, cells = planeP ? cP : cD;
@@ -472,6 +516,7 @@ let computed = null;
 function stepText() {
   const n = marks.length, cells = gridP.count() + Math.round(gridD.count() / 4);
   if (lostTrack) return ['위치를 다시 찾는 중…', '좌우로 살짝 움직여 주세요'];
+  if (fastRate.length > 10 && fastRate.reduce((a, b) => a + b, 0) / fastRate.length > 0.5) return ['조금 더 천천히 움직여 주세요', '빨리 움직이면 사진이 흐려져서 점을 버려요'];
   if (n === 0 && (cells < READY_CELLS || performance.now() - scanStart < READY_SEC * 1000)) return ['좌우로 천천히 비춰 주세요', `공·홀과 그 사이 바닥에 점을 모으는 중이에요 (${gridP.count()}칸)`];
   if (n === 0) return ['① 공을 눌러 주세요', `점 ${gridP.count()}칸 모음 · 더 비출수록 정확해요`];
   return ['② 홀(깃대 밑동)을 눌러 주세요', `공과 홀 사이를 한 번 더 훑어 비추면 더 정확해요 (${gridP.count()}칸)`];
@@ -484,13 +529,13 @@ function refresh() {
   $('debug').innerHTML = `<b style="color:${tex > 0.15 ? '#8fe39a' : '#ff8a7a'}">바닥 무늬 ${tex < 0 ? '-' : tex > 0.15 ? '잡힘 ✓' : '안 잡힘 ✗ (잴 수 없는 바닥)'}</b>` +
     ` · 특징점 ${hitSetup === 'ok' ? Math.round(Math.max(0, tex) * 100) + '%' : hitSetup} · 깊이 ${depthOk ? '됨' : '아직'} · 사진 ${camState} · 중력 차이 ${gravityAngleText()}`;
   $('result').style.display = 'none';
-  cloudAR = gridP.cells(2).slice(-600).map(c => [c.x, c.y, c.z]);
+  cloudAR = gridP.cells(2, 0.05, 2).slice(-600).map(c => [c.x, c.y, c.z]);
 }
 let cloudAR = [];
 
 const pct = p => p ? (Math.hypot(p.a, p.b) * 100).toFixed(1) + '%' : '-';
 function slopeLines(i) {
-  const ea = ` (±${i.errAlong.toFixed(1)}%)`, es = ` (±${i.errSide.toFixed(1)}%)`;
+  const ea = ` (±${Math.max(0.1, i.errAlong).toFixed(1)}%)`, es = ` (±${Math.max(0.1, i.errSide).toFixed(1)}%)`;
   const flat = Math.abs(i.alongPct) < 0.3;
   const up = (flat ? '거의 평평' : (i.alongPct > 0
     ? `오르막 ${i.alongPct.toFixed(1)}% · 홀이 ${Math.round(i.rise * 100)}cm 높음`
@@ -649,6 +694,107 @@ $('sPhoto').onclick = () => {
     toast('사진을 저장했어요 (다운로드 폴더)');
   }, 'image/png');
 };
+
+// ── 정답 재기(수평계) ──
+// 10/16 성환님 "어 만들어 주고" (정확도 확인용 — 실제 앱엔 안 넣음. README "내려놓고 재는 방식은 안 씀"은 제품 얘기).
+// 휴대폰을 화면이 위로, 윗부분이 홀 쪽으로 눕히면: 기울기 센서(가속도)의 y/z = 앞뒤(홀 쪽이 높으면 +), x/z = 좌우(오른쪽이 높으면 +).
+// 같은 자리에서 180도 돌려(윗부분이 공 쪽) 한 번 더 재면 경사는 부호가 바뀌고 휴대폰 치우침(센서·카메라 혹)은 그대로 →
+// 둘의 차이 ÷ 2 = 진짜 경사, 합 ÷ 2 = 치우침 (수평계를 뒤집어 재는 것과 같음).
+const lv = { on: false, buf: [], phase: 'A', waitLift: false, holdStart: 0, A: null, pairs: [] };
+window.addEventListener('devicemotion', e => {
+  if (!lv.on) return;
+  const g = e.accelerationIncludingGravity;
+  if (!g || g.x == null) return;
+  const t = performance.now();
+  lv.buf.push({ t, x: g.x, y: g.y, z: g.z });
+  while (lv.buf.length && lv.buf[0].t < t - 4000) lv.buf.shift();
+});
+function lvStats(since) {
+  const r = lv.buf.filter(v => v.t >= since);
+  if (r.length < 15) return null;
+  const m = k => r.reduce((a, v) => a + v[k], 0) / r.length;
+  const mx = m('x'), my = m('y'), mz = m('z');
+  const sd = (k, mu) => Math.sqrt(r.reduce((a, v) => a + (v[k] - mu) ** 2, 0) / r.length);
+  return { n: r.length, sx: mx / mz, sy: my / mz, mz, dx: sd('x', mx), dy: sd('y', my) };
+}
+const pctS = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
+function lvStepText() {
+  if (lv.phase === 'A' && lv.waitLift) return '다음 자리로 옮겨 주세요 — 휴대폰을 들어 올리면 다시 시작해요';
+  if (lv.phase === 'A') return `① 휴대폰을 라인 위(퍼터 샤프트·자 위)에 <b>화면이 위로, 윗부분이 홀 쪽</b>으로 눕혀 주세요.<br>가만히 두면 1.5초 뒤 저절로 재요.${lv.pairs.length ? ` (${lv.pairs.length + 1}번째 자리)` : ''}`;
+  if (lv.phase === 'B' && lv.waitLift) return '✓ 쟀어요. 이제 휴대폰을 <b>들어 올려</b> 주세요';
+  if (lv.phase === 'B') return '② 같은 자리에 <b>180도 돌려서(윗부분이 공 쪽)</b> 눕혀 주세요. 가만히 두면 저절로 재요.';
+  return '✓ 다 쟀어요. [한 군데 더]로 다른 자리도 재면 더 정확해요';
+}
+function lvShow() {
+  overlay.classList.remove('show-still'); overlay.classList.add('show-level');
+  Object.assign(lv, { on: true, buf: [], phase: 'A', waitLift: false, holdStart: 0, A: null, pairs: [], savedT: 0 });
+  $('lvDone').innerHTML = ''; $('lvStep').innerHTML = lvStepText();
+  requestAnimationFrame(lvLoop);
+}
+function lvLoop() {
+  if (!lv.on) return;
+  requestAnimationFrame(lvLoop);
+  const now = performance.now(), st = lvStats(now - 700);
+  drawBubble(st);
+  if (!st) { $('lvLive').textContent = '기울기 센서를 기다리는 중… (휴대폰을 움직여 보세요)'; return; }
+  const flat = st.mz > 8.8, steady = st.dx < 0.03 && st.dy < 0.03;
+  $('lvLive').innerHTML = flat
+    ? `앞뒤: 윗부분이 ${st.sy >= 0 ? '높음' : '낮음'} ${Math.abs(st.sy * 100).toFixed(1)}% · 좌우: ${st.sx >= 0 ? '오른쪽' : '왼쪽'}이 높음 ${Math.abs(st.sx * 100).toFixed(1)}%` +
+      `<br>${steady ? (lv.holdStart ? '재는 중… 가만히' : '') : '움직이는 중'}`
+    : '휴대폰을 화면이 위로 오게 눕혀 주세요';
+  if (lv.phase === 'done') return;
+  if (lv.waitLift) {                       // 쟀으면 한 번 들어 올려야 다음을 잰다 (같은 자세를 두 번 재지 않게)
+    if (!flat || st.dx > 0.3 || st.dy > 0.3) { lv.waitLift = false; lv.holdStart = 0; $('lvStep').innerHTML = lvStepText(); }
+    return;
+  }
+  if (!(flat && steady)) { lv.holdStart = 0; return; }
+  if (!lv.holdStart) { lv.holdStart = now; return; }
+  if (now - lv.holdStart < 1500) return;
+  const r = lvStats(lv.holdStart); lv.holdStart = 0;
+  if (!r) return;
+  try { navigator.vibrate && navigator.vibrate(80); } catch {}
+  if (lv.phase === 'A') { lv.A = r; lv.phase = 'B'; lv.waitLift = true; }
+  else {
+    lv.pairs.push({ along: (lv.A.sy - r.sy) / 2, side: (lv.A.sx - r.sx) / 2, by: (lv.A.sy + r.sy) / 2, bx: (lv.A.sx + r.sx) / 2 });
+    lv.phase = 'done'; lvResult();
+  }
+  $('lvStep').innerHTML = lvStepText();
+}
+function lvResult() {
+  const n = lv.pairs.length, avg = k => lv.pairs.reduce((a, p) => a + p[k], 0) / n;
+  const along = avg('along'), side = avg('side'), by = avg('by'), bx = avg('bx');
+  const i = still && still.info;
+  const camAlong = i ? i.alongPct / 100 : null, camSide = i ? (i.breakTo === 'left' ? i.sidePct : -i.sidePct) / 100 : null;
+  const sideTxt = v => Math.abs(v) < 0.003 ? '거의 없음' : `${Math.abs(v * 100).toFixed(1)}% (${v > 0 ? '오른쪽' : '왼쪽'}이 높음)`;
+  const upTxt = v => Math.abs(v) < 0.003 ? '거의 평평' : `${v > 0 ? '오르막' : '내리막'} ${Math.abs(v * 100).toFixed(1)}%`;
+  let html = `정답(수평계, ${n}군데): <b>${upTxt(along)}</b> · 옆 <b>${sideTxt(side)}</b>`;
+  if (i) html += `<br>카메라: ${upTxt(camAlong)} · 옆 ${sideTxt(camSide)}<br>차이(카메라 − 정답): 오르막 <b>${pctS(camAlong - along)}</b> · 옆 <b>${pctS(camSide - side)}</b>`;
+  html += `<br><span style="color:var(--dim);font-size:14px">휴대폰 치우침(뒤집어 재서 지운 값): 앞뒤 ${pctS(by)} · 좌우 ${pctS(bx)}</span>`;
+  $('lvDone').innerHTML = html;
+  const stamp = new Date().toLocaleString('ko-KR', { hour12: false });
+  const text = `[${stamp}] 정답 재기(${n}군데): ${upTxt(along)} · 옆 ${sideTxt(side)}` +
+    (i ? ` / 카메라: ${upTxt(camAlong)} · 옆 ${sideTxt(camSide)} / 차이 오르막 ${pctS(camAlong - along)} · 옆 ${pctS(camSide - side)} (거리 ${i.dist.toFixed(1)}m, ${i.src} 칸 ${i.nUsed}개)` : '') +
+    ` / 휴대폰 치우침 앞뒤 ${pctS(by)} · 좌우 ${pctS(bx)}` + lv.pairs.map((p, k) => ` / ${k + 1}번: ${pctS(p.along)}, 옆 ${pctS(p.side)}`).join('');
+  const list = loadHist();
+  if (lv.savedT && list[0] && list[0].t === lv.savedT) list[0].text = text; else { lv.savedT = Date.now(); list.unshift({ t: lv.savedT, text }); }
+  saveHist(list.slice(0, 50));
+}
+function drawBubble(st) {
+  const cv = $('lvBubble'), ctx = cv.getContext('2d'), W = cv.width, R = W / 2 - 10;
+  ctx.clearRect(0, 0, W, W);
+  ctx.strokeStyle = '#a9c4b3'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(W / 2, W / 2, R, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(W / 2, W / 2, R / 3, 0, Math.PI * 2); ctx.stroke();   // 안쪽 원 = 1%
+  ctx.beginPath(); ctx.moveTo(W / 2, 10); ctx.lineTo(W / 2, W - 10); ctx.moveTo(10, W / 2); ctx.lineTo(W - 10, W / 2); ctx.stroke();
+  ctx.fillStyle = '#ffd34d'; ctx.font = 'bold 26px system-ui'; ctx.textAlign = 'center'; ctx.fillText('홀 쪽 ↑', W / 2, 40);
+  if (!st || st.mz < 8.8) return;
+  // 거품은 높은 쪽으로 간다 (안쪽 원 = 1%, 바깥 원 = 3%)
+  const k = R / 3 / 0.01, bx = Math.max(-R, Math.min(R, st.sx * k)), by = Math.max(-R, Math.min(R, st.sy * k));
+  ctx.fillStyle = 'rgba(143,227,154,.9)'; ctx.beginPath(); ctx.arc(W / 2 + bx, W / 2 - by, 22, 0, Math.PI * 2); ctx.fill();
+}
+$('sLevel').onclick = () => { if (still) lvShow(); };
+$('lvMore').onclick = () => { if (lv.phase !== 'done') { toast('지금 자리를 먼저 다 재 주세요'); return; } lv.phase = 'A'; lv.waitLift = true; lv.holdStart = 0; $('lvStep').innerHTML = lvStepText(); };
+$('lvBack').onclick = () => { lv.on = false; overlay.classList.remove('show-level'); if (still) { overlay.classList.add('show-still'); showStill(); } else showHist(); };
 
 // ── 구슬: 퍼팅스타의 '경사 흐름 점'처럼 낮은 쪽으로 굴러간다 (1% → 초당 9cm, 최대 초당 90cm) ──
 // 공→홀 띠(공 0.5m 뒤 ~ 홀 0.5m 뒤, 좌우 1.2m)에 뿌린다.
