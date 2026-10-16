@@ -40,7 +40,7 @@
   #hud { top: max(10px, env(safe-area-inset-top)); }
   #hud .main { font-size: 26px; font-weight: 800; }
   #hud .meta, #debug { font-size: 13px; color: #cfd; }
-  #result { top: 120px; display: none; font-size: 20px; line-height: 1.5; }
+  #result { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 108px); display: none; font-size: 18px; line-height: 1.45; }
   #result b { color: var(--accent); }
   #result .warn { color: var(--bad); font-size: 16px; }
   #result .meta { font-size: 13px; color: #cfd; }
@@ -48,7 +48,7 @@
   #bar button { flex: 1; font-size: 18px; font-weight: 700; padding: 16px 4px; border-radius: 12px; border: 0; background: rgba(255,255,255,.92); color: #123; }
   #bar button.on { background: var(--accent); }
   #toast { position: absolute; left: 50%; bottom: 100px; transform: translateX(-50%); background: rgba(0,0,0,.75); padding: 10px 16px; border-radius: 10px; font-size: 17px; display: none; text-align: center; max-width: 90%; }
-  #debug { position: absolute; left: 12px; bottom: 90px; text-shadow: 0 0 3px #000; }
+  #debug { position: absolute; left: 12px; right: 12px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 62px); text-shadow: 0 0 3px #000; line-height: 1.4; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -59,15 +59,16 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 2 (10/16) · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 3 (10/16) · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>① 먼저 집에서 (바닥 시험)</b>
       <ol>
-        <li>시작을 누르고 휴대폰을 <b>세로로</b> 들어요.</li>
-        <li>바닥을 비추며 휴대폰을 좌우로 천천히 움직여요.</li>
-        <li>화면 위 <b>"여기 경사"</b>가 평평한 바닥에서 <b>0%에 가까운지</b> 봐요. 여러 방향에서 비춰도 0% 근처면 좋아요.</li>
-        <li>[저장]을 누르면 숫자가 남아요.</li>
+        <li>민무늬 바닥은 카메라가 잘 못 봐요. <b>신문지·잡지·무늬 있는 깔개</b>를 바닥에 몇 장 펼쳐 주세요.</li>
+        <li>시작을 누르고 휴대폰을 <b>세로로</b> 들고, 1m쯤 떨어져 비추며 좌우로 천천히 움직여요.</li>
+        <li>위쪽 <b>"여기 경사"</b>가 <b>0%에 가까운지</b>, 흰 구슬이 거의 멈춰 있는지 봐요.</li>
+        <li><b>그 자리에서 뒤로 돌아</b> 반대쪽에서도 비춰 봐요. 구슬이 늘 <b>내 쪽으로만</b> 흐르면 휴대폰 쪽 오차예요.</li>
+        <li>[저장]을 누르면 숫자가 남아요. 아래 작은 글씨(특징점·깊이)까지 같이 남아요.</li>
       </ol>
     </div>
     <div class="card">
@@ -75,8 +76,8 @@
       <ol>
         <li>십자선을 <b>공 바로 옆 잔디</b>에 맞추고 [공]을 눌러요.</li>
         <li>십자선을 <b>홀 바로 앞 잔디</b>에 맞추고 [홀]을 눌러요. 홀 쪽으로 걸어가서 눌러도 돼요.</li>
-        <li><b>공과 홀 사이 잔디</b>를 천천히 훑듯이 비춰요. "라인 비춤"이 80% 넘으면 좋아요.</li>
-        <li>[저장]을 누르고, 같은 자리 실제 경사(수평계나 경험)와 비교해 주세요.</li>
+        <li><b>공과 홀 사이 잔디</b>를 천천히 훑듯이 비춰요. 휴대폰을 <b>조금 아래로 숙여</b> 1~2m 앞을 비추며 걸으면 더 정확해요.</li>
+        <li>흰 구슬이 굴러가는 쪽이 낮은 쪽이에요. [저장]을 누르고 실제 느낌과 비교해 주세요.</li>
       </ol>
     </div>
     <div class="card" id="history">
@@ -114,20 +115,26 @@ const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
 // ── 설정 ──
-const NEAR_MIN = 0.3, NEAR_MAX = 4.5;   // 이 거리 안의 깊이만 쓴다(멀면 부정확)
-const COLS = 16, ROWS = 24;             // 한 장면에서 뽑는 점 수
+const NEAR_MIN = 0.3, NEAR_MAX = 3.5;   // 이 거리 안의 점만 쓴다(멀면 부정확)
+const COLS = 16, ROWS = 24;             // 깊이 그림에서 뽑는 점 수
+const HCOLS = 5, HROWS = 7;             // 특징점 광선 수 (가운데 광선 = 십자선)
 const LOCAL_R = 0.8;                    // "여기 경사"를 볼 반지름(m)
+const DOT_N = 160;                      // 구슬 수
 
-let session = null, refSpace = null, gl = null;
-const grid = new GR.Grid(0.1);
+let session = null, refSpace = null, viewerSpace = null, gl = null;
+// 두 가지 방법으로 따로 모은다: 깊이(카메라 깊이 그림) / 특징점(AR이 추적하는 잔디 무늬 점 — 더 정확할 것으로 기대)
+const gridD = new GR.Grid(0.1), gridP = new GR.Grid(0.1);
+let hitSources = [], hitCenterIdx = -1, hitSetup = 'no'; // no → trying → ok / fail
 let center = null;            // 십자선이 가리키는 땅 위 점
 let ball = null, hole = null;
 let capture = null;           // { which, pts, frames }
-let localPlane = null, result = null, resultPlane = null, resultInfo = null;
-let lastView = null;          // 화면에 그릴 때 쓰는 카메라 정보
-let lastLocalT = 0, lastResultT = 0;
-let depthOk = false, frameCount = 0;
+let local = null;             // { plane, src, planeD, planeP }
+let resultPlane = null, resultInfo = null, field = [];
+let lastView = null;          // { proj, viewMatrix, cam }
+let lastLocalT = 0, lastResultT = 0, lastT = 0;
+let depthOk = false, depthValid = 0, hitValid = 0;
 let upEma = null;             // 휴대폰 센서로 본 '위' 방향(세계 좌표) — AR의 위(y)와 맞는지 확인용
+const dots = Array.from({ length: DOT_N }, () => ({ x: 0, z: 0, life: 0, max: 1, region: '' }));
 
 // ── 기록 ──
 const HKEY = 'green-reader-history';
@@ -175,13 +182,14 @@ $('go').onclick = async () => {
     step('1. AR 요청');
     s = await navigator.xr.requestSession('immersive-ar', {
       requiredFeatures: ['depth-sensing', 'dom-overlay'],
+      optionalFeatures: ['hit-test'],
       domOverlay: { root: overlay },
       depthSensing: { usagePreference: ['cpu-optimized'], dataFormatPreference: ['luminance-alpha', 'float32'] },
     });
     clearTimeout(slow);
     step('2. AR 켜짐');
     session = s;
-    s.addEventListener('end', () => { session = null; overlay.classList.remove('in-ar'); showHist(); step('AR 끝남'); });
+    s.addEventListener('end', () => { session = null; hitSources = []; overlay.classList.remove('in-ar'); showHist(); step('AR 끝남'); });
     const canvas = document.createElement('canvas');
     gl = canvas.getContext('webgl', { xrCompatible: true, alpha: true });
     if (!gl) throw new Error('WebGL을 만들지 못함');
@@ -189,7 +197,9 @@ $('go').onclick = async () => {
     s.updateRenderState({ baseLayer: new XRWebGLLayer(s, gl) });
     step('3. 화면 준비');
     refSpace = await s.requestReferenceSpace('local');
+    viewerSpace = await s.requestReferenceSpace('viewer');
     step('4. 위치 기준 준비');
+    hitSources = []; hitSetup = 'no';
     overlay.classList.add('in-ar');
     resetAll();
     s.requestAnimationFrame(onFrame);
@@ -205,8 +215,29 @@ $('go').onclick = async () => {
 // 단추를 누를 때 AR '선택' 동작이 같이 일어나지 않게
 overlay.addEventListener('beforexrselect', e => e.preventDefault());
 
+// 특징점 광선: 화면 위 5×7 자리로 쏘는 광선. AR이 잔디 무늬에서 추적하는 점(특징점)에 맞으면 그 자리를 돌려준다.
+async function setupHitTests(proj) {
+  hitSetup = 'trying';
+  const tx = 1 / proj[0], ty = 1 / proj[5];
+  const list = [];
+  try {
+    for (let r = 0; r < HROWS; r++) for (let c = 0; c < HCOLS; c++) {
+      const nx = 0.1 + 0.8 * c / (HCOLS - 1), ny = 0.1 + 0.8 * r / (HROWS - 1);
+      const ray = new XRRay(new DOMPointReadOnly(0, 0, 0, 1), new DOMPointReadOnly(tx * (2 * nx - 1), ty * (1 - 2 * ny), -1, 0));
+      const src = await session.requestHitTestSource({ space: viewerSpace, offsetRay: ray, entityTypes: ['point'] });
+      list.push(src);
+      if (c === (HCOLS >> 1) && r === (HROWS >> 1)) hitCenterIdx = list.length - 1;
+    }
+    hitSources = list; hitSetup = 'ok';
+  } catch (e) {
+    list.forEach(s => { try { s.cancel(); } catch {} });
+    hitSources = []; hitSetup = 'fail: ' + (e && e.message || e);
+  }
+}
+
 function resetAll() {
-  grid.clear(); ball = hole = null; capture = null; localPlane = result = resultPlane = resultInfo = null;
+  gridD.clear(); gridP.clear(); ball = hole = null; capture = null; local = null; resultPlane = resultInfo = null; field = [];
+  dots.forEach(d => { d.life = 0; d.region = ''; });
   $('result').style.display = 'none';
   $('bBall').classList.remove('on'); $('bHole').classList.remove('on');
 }
@@ -215,7 +246,7 @@ $('bExit').onclick = () => { if (session) session.end(); };
 $('bBall').onclick = () => startCapture('ball');
 $('bHole').onclick = () => startCapture('hole');
 function startCapture(which) {
-  if (!depthOk) { toast('아직 바닥을 못 찾았어요. 좌우로 조금 더 움직여 주세요'); return; }
+  if (!center) { toast('아직 바닥을 못 찾았어요. 좌우로 조금 더 움직여 주세요'); return; }
   capture = { which, pts: [], frames: 0 };
   toast(which === 'ball' ? '공 위치 재는 중… 잠깐 가만히' : '홀 위치 재는 중… 잠깐 가만히', 1200);
 }
@@ -224,10 +255,9 @@ $('bSave').onclick = () => {
   const stamp = now.toLocaleString('ko-KR', { hour12: false });
   let text;
   if (resultInfo) {
-    text = `[${stamp}] 공→홀\n` + resultText(resultInfo, true);
-  } else if (localPlane) {
-    const pct = Math.hypot(localPlane.a, localPlane.b) * 100;
-    text = `[${stamp}] 여기 경사 ${pct.toFixed(1)}% (칸 ${localPlane.n}개, 흔들림 ±${(localPlane.rms * 100).toFixed(1)}cm, 중력 차이 ${gravityAngleText()})`;
+    text = `[${stamp}] 공→홀 (${resultInfo.src})\n` + resultText(resultInfo, true);
+  } else if (local) {
+    text = `[${stamp}] ` + localText(true);
   } else { toast('아직 저장할 숫자가 없어요'); return; }
   const list = loadHist(); list.unshift({ t: now.getTime(), text }); saveHist(list.slice(0, 50));
   toast('저장했어요');
@@ -254,15 +284,16 @@ function gravityAngleText() {
 function onFrame(t, frame) {
   if (!session) return;
   session.requestAnimationFrame(onFrame);
+  const dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0; lastT = t;
   const layer = session.renderState.baseLayer;
   gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
 
   const pose = frame.getViewerPose(refSpace);
-  if (!pose) { $('hudMain').textContent = '위치를 잃었어요'; $('hudMeta').textContent = '천천히 주변을 비춰 주세요'; draw(); return; }
+  if (!pose) { $('hudMain').textContent = '위치를 잃었어요'; $('hudMeta').textContent = '천천히 주변을 비춰 주세요'; draw(dt); return; }
   const view = pose.views[0];
-  lastView = { proj: view.projectionMatrix, viewMatrix: view.transform.inverse.matrix };
-  frameCount++;
+  lastView = { proj: view.projectionMatrix, viewMatrix: view.transform.inverse.matrix, cam: view.transform.matrix };
+  if (hitSetup === 'no' && session.requestHitTestSource) setupHitTests(view.projectionMatrix);
 
   // 센서 '위' 방향을 세계 좌표로 바꿔 천천히 평균
   if (upDev) {
@@ -273,35 +304,43 @@ function onFrame(t, frame) {
     upEma = upEma ? upEma.map((v, i) => v * 0.98 + w[i] * 0.02) : w;
   }
 
+  let centerD = null, centerP = null;
   let depth = null;
   try { depth = frame.getDepthInformation(view); } catch (e) { depth = null; }
-  if (depth) sampleDepth(depth, view);
-  else depthOk = false;
+  if (depth) centerD = sampleDepth(depth, view); else { depthOk = false; depthValid = 0; }
+  if (hitSources.length) centerP = sampleHits(frame, view);
+  center = centerP || centerD;
+
+  if (capture) {
+    if (center) capture.pts.push(center);
+    if (++capture.frames >= 15) finishCapture();
+  }
 
   if (t - lastLocalT > 200) { lastLocalT = t; updateLocal(); }
   if (ball && hole && t - lastResultT > 500) { lastResultT = t; updateResult(); }
-  $('debug').textContent = `깊이 ${depth ? depth.width + '×' + depth.height : '없음'} · 칸 ${grid.map.size} · 중력 차이 ${gravityAngleText()}`;
-  draw();
+  $('debug').textContent = `깊이 점 ${depthValid}/${COLS * ROWS} · 특징점 ${hitSetup === 'ok' ? hitValid + '/' + hitSources.length : hitSetup}` +
+    ` · 칸 깊이 ${gridD.count()} / 특징점 ${gridP.count()} · 중력 차이 ${gravityAngleText()}`;
+  draw(dt);
 }
 
+// 깊이 그림 → 세계 좌표. ⚠ getDepthInMeters는 '화면(view) 기준' 위치를 받으므로, 방향도 화면의 투영 행렬로 계산해야 한다.
+// (시험판 1~2는 깊이 카메라 자체의 투영 행렬을 써서, 둘이 다르면 평평한 바닥이 기울어 보였을 수 있다 — 20% 같은 큰 값의 유력한 원인)
 function sampleDepth(depth, view) {
-  const proj = depth.projectionMatrix || view.projectionMatrix;
-  const cam = (depth.transform || view.transform).matrix;
-  const inv = GR.mat4Invert(proj);
-  if (!inv) return;
+  const inv = GR.mat4Invert(view.projectionMatrix);
+  if (!inv) return null;
+  const cam = view.transform.matrix;
   const get = (nx, ny) => { try { return depth.getDepthInMeters(nx, ny); } catch { return 0; } };
-
-  // 화면 전체에서 고르게 점을 뽑아 칸에 모은다
+  let valid = 0;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const nx = 0.05 + 0.9 * (c + 0.5) / COLS, ny = 0.05 + 0.9 * (r + 0.5) / ROWS;
       const d = get(nx, ny);
       if (!(d > NEAR_MIN && d < NEAR_MAX)) continue;
       const p = GR.unproject(nx, ny, d, inv, cam);
-      grid.add(p[0], p[1], p[2]);
+      gridD.add(p[0], p[1], p[2]); valid++;
     }
   }
-  // 십자선 자리 (가운데 3×3 점의 가운뎃값)
+  depthValid = valid;
   const cs = [];
   for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
     const nx = 0.5 + i * 0.012, ny = 0.5 + j * 0.012;
@@ -309,62 +348,109 @@ function sampleDepth(depth, view) {
     if (d > NEAR_MIN && d < 8) cs.push(GR.unproject(nx, ny, d, inv, cam));
   }
   depthOk = cs.length >= 3;
-  center = depthOk ? median3(cs) : null;
-
-  if (capture) {
-    if (center) capture.pts.push(center);
-    if (++capture.frames >= 15) finishCapture();
-  }
+  return depthOk ? median3(cs) : null;
 }
+
+// 특징점 광선 결과 → 세계 좌표
+function sampleHits(frame, view) {
+  const cx = view.transform.position.x, cy = view.transform.position.y, cz = view.transform.position.z;
+  let valid = 0, centerHit = null;
+  hitSources.forEach((src, i) => {
+    const res = frame.getHitTestResults(src);
+    if (!res.length) return;
+    const p = res[0].getPose(refSpace);
+    if (!p) return;
+    const q = p.transform.position;
+    const d = Math.hypot(q.x - cx, q.y - cy, q.z - cz);
+    if (d < NEAR_MIN || d > 8) return;
+    if (i === hitCenterIdx) centerHit = [q.x, q.y, q.z];
+    if (d > NEAR_MAX) return;
+    gridP.add(q.x, q.y, q.z); valid++;
+  });
+  hitValid = valid;
+  return centerHit;
+}
+
 function median3(pts) {
   const m = k => { const s = pts.map(p => p[k]).sort((a, b) => a - b); return s[s.length >> 1]; };
   return [m(0), m(1), m(2)];
 }
 function finishCapture() {
   const { which, pts } = capture; capture = null;
-  if (pts.length < 5) { toast('깊이를 못 읽었어요. 조금 더 가까이서 다시 눌러 주세요'); return; }
+  if (pts.length < 5) { toast('땅을 못 읽었어요. 조금 더 가까이서 다시 눌러 주세요'); return; }
   const p = median3(pts);
   if (which === 'ball') { ball = p; $('bBall').classList.add('on'); toast(hole ? '공 찍음. 공과 홀 사이를 훑어 비춰 주세요' : '공 찍음. 이제 홀 앞 잔디에 맞추고 [홀]'); }
   else { hole = p; $('bHole').classList.add('on'); toast(ball ? '홀 찍음. 공과 홀 사이를 훑어 비춰 주세요' : '홀 찍음. 이제 공 옆 잔디에 맞추고 [공]'); }
   lastResultT = 0;
 }
 
+// 두 방법 중 고르기: 특징점 칸이 넉넉하면 특징점, 아니면 깊이
+function pick(planeP, planeD, needP, needD) {
+  if (planeP && planeP.n >= needP) return { plane: planeP, src: '특징점' };
+  if (planeD && planeD.n >= needD) return { plane: planeD, src: '깊이' };
+  return null;
+}
+const pct = p => p ? (Math.hypot(p.a, p.b) * 100).toFixed(1) + '%' : '-';
+
+// 지금 보는 방향 기준으로 나눠 보기: 앞뒤(먼 쪽이 높은가) / 좌우(오른쪽이 높은가)
+function camSplit(plane) {
+  if (!lastView) return null;
+  const m = lastView.cam;
+  let fx = -m[8], fz = -m[10]; const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
+  const rx = -fz, rz = fx;
+  return { fwd: (plane.a * fx + plane.b * fz) * 100, right: (plane.a * rx + plane.b * rz) * 100 };
+}
+
 // "여기 경사": 십자선 둘레 80cm
 function updateLocal() {
   if (!center) {
-    localPlane = null;
+    local = null;
     $('hudMain').textContent = '바닥을 비춰 주세요';
-    $('hudMeta').textContent = '휴대폰을 좌우로 천천히 움직여요';
+    $('hudMeta').textContent = '휴대폰을 좌우로 천천히 움직여요. 민무늬 바닥은 잘 안 잡혀요';
     return;
   }
-  const near = GR.cellsNear(grid.cells(), center[0], center[2], LOCAL_R);
-  localPlane = GR.fitPlane(near);
-  if (!localPlane || localPlane.n < 15) {
-    localPlane = null;
+  const planeP = GR.fitPlane(GR.cellsNear(gridP.cells(2), center[0], center[2], LOCAL_R));
+  const planeD = GR.fitPlane(GR.cellsNear(gridD.cells(), center[0], center[2], LOCAL_R));
+  const got = pick(planeP, planeD, 12, 15);
+  if (!got) {
+    local = null;
     $('hudMain').textContent = '모으는 중…';
-    $('hudMeta').textContent = `십자선 둘레를 조금 더 비춰 주세요 (칸 ${near.length}개)`;
+    $('hudMeta').textContent = '십자선 둘레를 조금 더 비춰 주세요';
     return;
   }
-  const pct = Math.hypot(localPlane.a, localPlane.b) * 100;
-  $('hudMain').textContent = `여기 경사 ${pct.toFixed(1)}%`;
-  $('hudMeta').textContent = `노란 화살표 = 물 흐르는 쪽 · 칸 ${localPlane.n}개 · 흔들림 ±${(localPlane.rms * 100).toFixed(1)}cm`;
+  local = { ...got, planeP, planeD };
+  $('hudMain').textContent = `여기 경사 ${pct(got.plane)}`;
+  $('hudMeta').textContent = localText(false);
+}
+function localText(plain) {
+  const s = camSplit(local.plane);
+  const dir = s ? `앞뒤 ${s.fwd >= 0 ? '먼 쪽이 높음' : '내 쪽이 높음'} ${Math.abs(s.fwd).toFixed(1)}% · 좌우 ${s.right >= 0 ? '오른쪽이 높음' : '왼쪽이 높음'} ${Math.abs(s.right).toFixed(1)}%` : '';
+  const both = `특징점 ${pct(local.planeP)}(칸 ${local.planeP ? local.planeP.n : 0}) · 깊이 ${pct(local.planeD)}(칸 ${local.planeD ? local.planeD.n : 0})`;
+  const q = `흔들림 ±${(local.plane.rms * 100).toFixed(1)}cm · 중력 차이 ${gravityAngleText()}`;
+  if (plain) return `여기 경사 ${pct(local.plane)} (${local.src})\n${dir}\n${both}\n${q}`;
+  return `${dir}<br>${both} · ${q}`.replace(/<br>/g, ' · ');
 }
 
 function updateResult() {
-  const cells = GR.cellsInCorridor(grid.cells(), ball, hole, 0.5, 0.3);
-  const plane = GR.fitPlane(cells);
+  const cP = GR.cellsInCorridor(gridP.cells(2), ball, hole, 0.5, 0.3);
+  const cD = GR.cellsInCorridor(gridD.cells(), ball, hole, 0.5, 0.3);
+  const planeP = GR.fitPlane(cP), planeD = GR.fitPlane(cD);
+  const got = pick(planeP, planeD, 10, 12);
   const box = $('result'); box.style.display = 'block';
   const dist = Math.hypot(hole[0] - ball[0], hole[2] - ball[2]);
-  if (!plane || plane.n < 12) {
-    resultInfo = null; resultPlane = null;
-    box.innerHTML = `거리 <b>${dist.toFixed(1)}m</b><br><span class="warn">공과 홀 사이 잔디를 천천히 훑어 비춰 주세요 (칸 ${cells.length}개)</span>`;
+  if (!got) {
+    resultInfo = null; resultPlane = null; field = [];
+    box.innerHTML = `거리 <b>${dist.toFixed(1)}m</b><br><span class="warn">공과 홀 사이 잔디를 천천히 훑어 비춰 주세요</span>`;
     return;
   }
-  const info = GR.analyze(ball, hole, plane);
+  const cells = got.src === '특징점' ? cP : cD;
+  const info = GR.analyze(ball, hole, got.plane);
   info.cover = GR.coverage(cells, ball, hole);
-  info.rms = plane.rms; info.n = plane.n;
+  info.rms = got.plane.rms; info.n = got.plane.n; info.src = got.src;
   info.direct = hole[1] - ball[1];
-  resultInfo = info; resultPlane = plane;
+  info.other = got.src === '특징점' ? `깊이 ${pct(planeD)}` : `특징점 ${pct(planeP)}`;
+  resultInfo = info; resultPlane = got.plane;
+  field = GR.gradientField(cells, ball, hole, got.plane);
   box.innerHTML = resultText(info, false);
 }
 
@@ -375,14 +461,41 @@ function resultText(i, plain) {
     : `내리막 ${(-i.alongPct).toFixed(1)}% · 홀이 ${Math.round(-i.rise * 100)}cm 낮음`);
   const side = i.sidePct < 0.3 ? '옆 경사 거의 없음'
     : `옆 경사 ${i.sidePct.toFixed(1)}% · ${i.breakTo === 'right' ? '오른쪽으로 휨 (왼쪽이 높음)' : '왼쪽으로 휨 (오른쪽이 높음)'}`;
-  const meta = `라인 비춤 ${Math.round(i.cover * 100)}% · 면 흔들림 ±${(i.rms * 100).toFixed(1)}cm · 칸 ${i.n}개 · 중력 차이 ${gravityAngleText()} · 점끼리 높이 차 ${Math.round(i.direct * 100)}cm`;
+  const meta = `${i.src} · 라인 비춤 ${Math.round(i.cover * 100)}% · 흔들림 ±${(i.rms * 100).toFixed(1)}cm · 칸 ${i.n}개 · (${i.other}) · 중력 차이 ${gravityAngleText()} · 점끼리 높이 차 ${Math.round(i.direct * 100)}cm`;
   if (plain) return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n(${meta})`;
   const warn = i.cover < 0.6 ? '<br><span class="warn">공과 홀 사이를 더 비추면 정확해져요</span>' : '';
   return `거리 <b>${i.dist.toFixed(1)}m</b><br>${up}<br>${side}${warn}<br><span class="meta">${meta}</span>`;
 }
 
-// ── 화면 위에 공·홀·물 흐름 화살표 그리기 ──
-function draw() {
+// ── 구슬: 퍼팅스타의 '경사 흐름 점'처럼 낮은 쪽으로 굴러간다 (1% → 초당 9cm, 최대 초당 90cm) ──
+function dotRegion() {
+  if (ball && hole && resultPlane) return 'line';
+  if (center && local) return 'local';
+  return '';
+}
+function respawn(p, region, randomLife) {
+  if (region === 'line') {
+    const dx = hole[0] - ball[0], dz = hole[2] - ball[2], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
+    const u = -0.3 + Math.random() * (L + 0.6), v = (Math.random() * 2 - 1) * 0.6;
+    p.x = ball[0] + ux * u - uz * v; p.z = ball[2] + uz * u + ux * v;
+  } else {
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * LOCAL_R;
+    p.x = center[0] + Math.cos(a) * r; p.z = center[2] + Math.sin(a) * r;
+  }
+  p.region = region;
+  p.max = 2 + Math.random() * 2; p.life = randomLife ? Math.random() * p.max : p.max;
+}
+function inRegion(p, region) {
+  if (region === 'line') {
+    const dx = hole[0] - ball[0], dz = hole[2] - ball[2], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
+    const px = p.x - ball[0], pz = p.z - ball[2], u = px * ux + pz * uz, v = -px * uz + pz * ux;
+    return u > -0.5 && u < L + 0.5 && Math.abs(v) < 0.8;
+  }
+  return (p.x - center[0]) ** 2 + (p.z - center[2]) ** 2 < (LOCAL_R * 1.2) ** 2;
+}
+
+// ── 화면 위에 공·홀·구슬 그리기 ──
+function draw(dt) {
   const cv = $('draw');
   const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
@@ -390,52 +503,41 @@ function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
   if (!lastView) return;
-  const P = (x, y, z) => { const s = GR.project(x, y, z, lastView.proj, lastView.viewMatrix); return s ? [s[0] * W, s[1] * H] : null; };
+  const P = (x, y, z) => { const s = GR.project(x, y, z, lastView.proj, lastView.viewMatrix); return s ? [s[0] * W, s[1] * H, s[2]] : null; };
+  const focal = lastView.proj[5] * H / 2; // 1m 앞의 1m가 화면에서 몇 점인가
 
-  // 공→홀 선과 물 흐름 화살표
+  // 공→홀 선 (옅게)
   if (ball && hole) {
     const a = P(...ball), b = P(...hole);
-    if (a && b) { ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 3; ctx.setLineDash([10, 8]); line(ctx, a, b); ctx.setLineDash([]); }
-    if (resultPlane && resultInfo) {
-      const L = resultInfo.dist, n = Math.max(2, Math.round(L / 0.5));
-      const f = resultInfo.fall, len = 0.3;
-      for (let k = 0; k <= n; k++) {
-        const s = k / n;
-        const x = ball[0] + (hole[0] - ball[0]) * s, z = ball[2] + (hole[2] - ball[2]) * s;
-        const y = resultPlane.a * x + resultPlane.b * z + resultPlane.c;
-        const x2 = x + f[0] * len, z2 = z + f[1] * len, y2 = resultPlane.a * x2 + resultPlane.b * z2 + resultPlane.c;
-        const p1 = P(x, y, z), p2 = P(x2, y2, z2);
-        if (p1 && p2) arrow(ctx, p1, p2, '#4fc3ff');
-      }
+    if (a && b) { ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 2; ctx.setLineDash([8, 8]); line(ctx, a, b); ctx.setLineDash([]); }
+  }
+
+  // 구슬
+  const region = dotRegion();
+  const plane = region === 'line' ? resultPlane : region === 'local' ? local.plane : null;
+  if (plane) {
+    for (const p of dots) {
+      if (p.region !== region) respawn(p, region, true);
+      const g = region === 'line' ? GR.gradAt(field, plane, p.x, p.z) : [plane.a, plane.b];
+      const m = Math.hypot(g[0], g[1]), k = Math.min(0.9, m * 9) / (m || 1);
+      p.x -= g[0] * k * dt; p.z -= g[1] * k * dt; p.life -= dt;
+      if (p.life <= 0 || !inRegion(p, region)) { respawn(p, region, false); continue; }
+      const y = plane.a * p.x + plane.b * p.z + plane.c + 0.015;
+      const s = P(p.x, y, p.z);
+      if (!s) continue;
+      const alpha = Math.min(1, (p.max - p.life) * 2, p.life * 2) * Math.min(1, m / 0.004) * 0.9;
+      if (alpha <= 0.02) continue;
+      const r = Math.max(2, Math.min(9, 0.014 * focal / s[2]));
+      ctx.beginPath(); ctx.arc(s[0], s[1], r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`; ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = `rgba(0,0,0,${alpha * 0.35})`; ctx.stroke();
     }
   }
+
   if (ball) marker(ctx, P(...ball), '#ffffff', '공');
   if (hole) marker(ctx, P(...hole), '#222222', '홀');
-
-  // 십자선 자리의 물 흐름 화살표
-  if (center && localPlane) {
-    const g = Math.hypot(localPlane.a, localPlane.b);
-    if (g > 0.002) {
-      const fx = -localPlane.a / g, fz = -localPlane.b / g, len = 0.35;
-      const y0 = localPlane.a * center[0] + localPlane.b * center[2] + localPlane.c;
-      const p1 = P(center[0], y0, center[2]);
-      const p2 = P(center[0] + fx * len, y0 - g * len, center[2] + fz * len);
-      if (p1 && p2) arrow(ctx, p1, p2, '#ffd34d');
-    }
-  }
 }
 function line(ctx, a, b) { ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
-function arrow(ctx, a, b, color) {
-  const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
-  if (L < 6) return;
-  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 4; ctx.lineCap = 'round';
-  line(ctx, a, b);
-  const ux = dx / L, uy = dy / L, h = Math.min(16, L * 0.45);
-  ctx.beginPath(); ctx.moveTo(b[0], b[1]);
-  ctx.lineTo(b[0] - ux * h - uy * h * 0.6, b[1] - uy * h + ux * h * 0.6);
-  ctx.lineTo(b[0] - ux * h + uy * h * 0.6, b[1] - uy * h - ux * h * 0.6);
-  ctx.closePath(); ctx.fill();
-}
 function marker(ctx, p, color, label) {
   if (!p) return;
   ctx.beginPath(); ctx.arc(p[0], p[1], 12, 0, Math.PI * 2);

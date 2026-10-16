@@ -53,12 +53,12 @@
     return [w[0], w[1], w[2]];
   }
 
-  // 세계 좌표 → 화면(0~1). 카메라 뒤면 null.
+  // 세계 좌표 → 화면(0~1)과 카메라 면까지 거리. 카메라 뒤면 null.
   function project(x, y, z, proj, viewMatrix) {
     const c = mat4MulVec(viewMatrix, x, y, z, 1);
     if (c[2] > -0.05) return null;
     const p = mat4MulVec(proj, c[0], c[1], c[2], 1);
-    return [(p[0] / p[3] + 1) / 2, (1 - p[1] / p[3]) / 2];
+    return [(p[0] / p[3] + 1) / 2, (1 - p[1] / p[3]) / 2, -c[2]];
   }
 
   // ── 10cm 칸에 높이를 모은다 ──
@@ -75,6 +75,7 @@
   };
   Grid.prototype.clear = function () { this.map.clear(); };
   // 칸마다 평균 위치와 높이 흔들림(표준편차). 점이 적거나 위아래로 넓게 퍼진 칸(깃대·사람 다리)은 뺀다.
+  Grid.prototype.count = function () { return this.map.size; };
   Grid.prototype.cells = function (minN, maxStd) {
     const out = [];
     minN = minN || 3; maxStd = maxStd || 0.05;
@@ -177,7 +178,37 @@
     };
   }
 
-  const api = { mat4Invert, mat4MulVec, unproject, project, Grid, fitPlane, cellsNear, cellsInCorridor, coverage, analyze };
+  // 공→홀 띠 위의 작은 마당들(50cm 간격, 가운데·좌우 50cm)마다 따로 기울기를 맞춘다 → 구슬이 굴곡을 따라 흐르게.
+  // 칸이 모자란 마당은 뺀다(그 자리는 띠 전체 면을 쓴다).
+  function gradientField(cells, ball, hole, plane) {
+    const dx = hole[0] - ball[0], dz = hole[2] - ball[2];
+    const L = Math.hypot(dx, dz);
+    if (L < 0.05) return [];
+    const ux = dx / L, uz = dz / L, out = [];
+    for (let u = -0.25; u <= L + 0.25; u += 0.5) {
+      for (const v of [-0.5, 0, 0.5]) {
+        const x = ball[0] + ux * u - uz * v, z = ball[2] + uz * u + ux * v;
+        const f = fitPlane(cellsNear(cells, x, z, 0.6));
+        // 띠 전체 면과 너무 다르면(5% 넘게) 잡음으로 보고 버린다
+        if (f && f.n >= 10 && (!plane || Math.hypot(f.a - plane.a, f.b - plane.b) < 0.05)) out.push({ x, z, a: f.a, b: f.b });
+      }
+    }
+    return out;
+  }
+  // 그 자리 기울기: 가까운 마당들을 거리로 섞고, 없으면 띠 전체 면
+  function gradAt(field, plane, x, z) {
+    let wa = 0, wb = 0, W = 0;
+    for (const f of field) {
+      const d2 = (f.x - x) ** 2 + (f.z - z) ** 2;
+      if (d2 > 0.49) continue;
+      const w = 1 / (d2 + 0.04);
+      wa += w * f.a; wb += w * f.b; W += w;
+    }
+    if (W > 0) return [wa / W, wb / W];
+    return plane ? [plane.a, plane.b] : [0, 0];
+  }
+
+  const api = { mat4Invert, mat4MulVec, unproject, project, Grid, fitPlane, cellsNear, cellsInCorridor, coverage, analyze, gradientField, gradAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GR = api;
 })(this);
