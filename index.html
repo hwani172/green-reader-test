@@ -67,7 +67,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 6 · 판 f561a3d 10/16 13:29 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 6-2 · 판 edc72a1 10/16 13:46 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -128,15 +128,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=f561a3d-1016042934"></script>
+<script src="slope.js?v=edc72a1-1016044619"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 f561a3d-1016042934를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 edc72a1-1016044619를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = 'f561a3d-1016042934';
+const BUILD_ID = 'edc72a1-1016044619';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -164,7 +164,7 @@ const DOT_N = 160;                      // 구슬 수
 
 let session = null, refSpace = null, gl = null, glBinding = null;
 let marks = [];               // 찍은 점: { kind:'ball'|'hole'|'side', p:[x,y,z], src, pD, pP, spread, dist }
-let measuring = null;         // 지금 재는 점: { kind, nx, ny, frames, ptsD, ptsP, est, ray, hitSrc }
+let measuring = null;         // 지금 재는 점: { kind, nx, ny, frames, ptsD, est, rays, srcs, ptsK, ptsPl, planeSrc }
 let resultPlane = null, resultInfo = null;
 let lastView = null;          // { proj, viewMatrix, cam }
 let lastDepthOk = null, lastT = 0, depthOk = false, hitState = '-', camState = '-', lostTrack = false, wantShot = false;
@@ -274,11 +274,11 @@ $('ar').addEventListener('click', e => {
   if (!lastView) { toast('카메라가 아직 준비 중이에요'); return; }
   const r = overlay.getBoundingClientRect();
   const kind = marks.length === 0 ? 'ball' : marks.length === 1 ? 'hole' : 'side';
-  measuring = { kind, nx: (e.clientX - r.left) / r.width, ny: (e.clientY - r.top) / r.height, frames: 0, ptsD: [], ptsP: [], est: null, ray: null, hitSrc: null };
+  measuring = { kind, nx: (e.clientX - r.left) / r.width, ny: (e.clientY - r.top) / r.height, frames: 0, ptsD: [], est: null, rays: null, srcs: [], ptsK: [], ptsPl: [], planeSrc: null };
   toast('재는 중… 2초만 가만히', 1800);
 });
 function cancelMeasure() {
-  if (measuring && measuring.hitSrc) { try { measuring.hitSrc.cancel(); } catch {} }
+  if (measuring) [...measuring.srcs.map(x => x.src), measuring.planeSrc].forEach(src => { if (src) try { src.cancel(); } catch {} });
   measuring = null;
 }
 function resetAll() {
@@ -367,14 +367,27 @@ function measureStep(frame, view, depth) {
   const proj = view.projectionMatrix, inv = GR.mat4Invert(proj);
   if (!inv) return;
   const cam = view.transform.matrix;
-  if (!m.ray) {                         // 특징점 광선: 옆 점은 비교용, 공·홀은 깊이가 안 될 때 대신 쓴다
-    m.ray = GR.screenRay(m.nx, m.ny, inv, cam);
+  if (!m.rays) {
+    // 시험판 6-2 (10/16 사무실 평평한 바닥 기록: 깊이로 잰 홀이 36cm나 높고 특징점과 크게 어긋남 → 민무늬 바닥에서 깊이가 크게 틀림)
+    // → 특징점을 주로 쓴다. 처음 장면의 카메라에서 '세계에 고정된' 광선을 쏴서, AR이 추적하는 바닥 무늬 점(특징점)에 맞는 곳을 잰다.
+    //   공·홀: 누른 자리 둘레 12cm 고리 위 8개 광선(공 위·홀 구멍을 피함) / 그 밖의 점: 누른 자리 광선 1개.
+    // + 비교용: 같은 광선이 AR '바닥 면'(늘 수평)에 맞는 높이 — 평평한 바닥에서 시험할 때 정답 노릇.
+    let d0 = 2;
+    if (depth) { try { const d = depth.getDepthInMeters(m.nx, m.ny); if (d > NEAR_MIN && d < FAR_MAX) d0 = d; } catch {} }
+    m.rays = [];
+    if (m.kind === 'side') m.rays.push(GR.screenRay(m.nx, m.ny, inv, cam));
+    else for (let k = 0; k < 8; k++) {
+      const a = k * Math.PI / 4;
+      m.rays.push(GR.screenRay(m.nx + Math.cos(a) * 0.12 * proj[0] / 2 / d0, m.ny - Math.sin(a) * 0.12 * proj[5] / 2 / d0, inv, cam));
+    }
+    m.ptsK = m.rays.map(() => []);
     if (session.requestHitTestSource && typeof XRRay !== 'undefined') {
-      const o = m.ray.o, d = m.ray.d;
-      session.requestHitTestSource({ space: refSpace, entityTypes: ['point'],
-        offsetRay: new XRRay(new DOMPointReadOnly(o[0], o[1], o[2], 1), new DOMPointReadOnly(d[0], d[1], d[2], 0)) })
-        .then(src => { if (measuring === m) { m.hitSrc = src; hitState = '됨'; } else src.cancel(); })
-        .catch(e => { hitState = '안 됨(' + (e && e.message || e) + ')'; });
+      const xray = r => new XRRay(new DOMPointReadOnly(r.o[0], r.o[1], r.o[2], 1), new DOMPointReadOnly(r.d[0], r.d[1], r.d[2], 0));
+      m.rays.forEach((r, k) => session.requestHitTestSource({ space: refSpace, entityTypes: ['point'], offsetRay: xray(r) })
+        .then(src => { if (measuring === m) { m.srcs.push({ src, k }); hitState = '됨'; } else src.cancel(); })
+        .catch(e => { hitState = '안 됨(' + (e && e.message || e) + ')'; }));
+      session.requestHitTestSource({ space: refSpace, entityTypes: ['plane'], offsetRay: xray(GR.screenRay(m.nx, m.ny, inv, cam)) })
+        .then(src => { if (measuring === m) m.planeSrc = src; else src.cancel(); }).catch(() => {});
     }
   }
   if (depth) {
@@ -406,11 +419,9 @@ function measureStep(frame, view, depth) {
       }
     }
   }
-  if (m.hitSrc) {
-    const res = frame.getHitTestResults(m.hitSrc);
-    const p = res.length && res[0].getPose(refSpace);
-    if (p) { const q = p.transform.position; m.ptsP.push([q.x, q.y, q.z]); }
-  }
+  const hitAt = src => { const res = frame.getHitTestResults(src), p = res.length && res[0].getPose(refSpace); return p ? [p.transform.position.x, p.transform.position.y, p.transform.position.z] : null; };
+  for (const { src, k } of m.srcs) { const q = hitAt(src); if (q) m.ptsK[k].push(q); }
+  if (m.planeSrc) { const q = hitAt(m.planeSrc); if (q) m.ptsPl.push(q); }
   if (++m.frames >= MEASURE_FRAMES) finishMeasure(view);
 }
 
@@ -427,14 +438,18 @@ function spreadCm(pts, mid) {
 function finishMeasure(view) {
   const m = measuring; cancelMeasure();
   const pD = m.ptsD.length >= 3 ? median3(m.ptsD) : null;
-  const pP = m.ptsP.length >= 3 ? median3(m.ptsP) : null;
-  // 깊이 = 누른 바로 그 자리(공·홀은 그 둘레). 특징점은 광선 근처의 다른 점일 수 있어서 비교용으로 남기고, 깊이가 없을 때만 쓴다.
-  const p = pD || pP;
+  // 특징점: 광선마다 가운데 값 → 공·홀은 광선 3개 이상 맞아야(고리), 옆 점은 1개
+  const perRay = m.ptsK.filter(a => a.length >= 3).map(median3);
+  const pP = perRay.length >= (m.kind === 'side' ? 1 : 3) ? median3(perRay) : null;
+  const pPl = m.ptsPl.length >= 3 ? median3(m.ptsPl) : null;
+  m.ptsP = m.ptsK.flat();
+  // 6-2부터: 특징점을 먼저, 없으면 깊이 (사무실 바닥에서 깊이가 크게 틀렸음)
+  const p = pP || pD;
   // 못 읽으면 왜 못 읽었는지 숫자도 같이 (캡처로 원인을 알 수 있게)
   if (!p) { toast(`그 자리를 못 읽었어요. 휴대폰을 좌우로 살짝 움직인 뒤 다시 눌러 주세요 (깊이 ${m.nDepth || 0}/${m.frames} · 고리 ${m.nRing || 0} · 가운데 ${m.nCenter || 0} · 특징점 ${m.ptsP.length})`, 5000); return; }
   const c = view.transform.position;
-  const mark = { kind: m.kind, p, src: pD ? '깊이' : '특징점', pD, pP,
-    spread: spreadCm(pD ? m.ptsD : m.ptsP, p), dist: Math.hypot(p[0] - c.x, p[1] - c.y, p[2] - c.z) };
+  const mark = { kind: m.kind, p, src: pP ? '특징점' : '깊이', pD, pP, pPl,
+    spread: spreadCm(pP ? m.ptsP : m.ptsD, p), dist: Math.hypot(p[0] - c.x, p[1] - c.y, p[2] - c.z) };
   marks.push(mark);
   compute();
   refresh();
@@ -454,8 +469,8 @@ function compute() {
   const b = ball(), h = hole(), L = Math.hypot(h[0] - b[0], h[2] - b[2]), ux = (h[0] - b[0]) / L, uz = (h[2] - b[2]) / L;
   info.errAlong = GR.slopeErr(plane.cov, ux, uz) * 100; info.errSide = GR.slopeErr(plane.cov, -uz, ux) * 100;
   info.sides = marks.slice(2).map(m => GR.lineOffset(ball(), hole(), m.p).v);
-  // 비교용: 옆 점들을 깊이로만 / 특징점으로만 잰 경우 (공·홀은 늘 둘레 깊이)
-  const alt = k => marks.slice(2).every(m => m[k]) ? GR.fitPoints(marks.map((m, i) => i < 2 ? m.p : m[k])) : null;
+  // 비교용: 모든 점을 깊이로만 / 특징점으로만 잰 경우
+  const alt = k => marks.every(m => m[k]) ? GR.fitPoints(marks.map(m => m[k])) : null;
   info.planeD = alt('pD'); info.planeP = alt('pP');
   resultPlane = plane; resultInfo = info;
 }
@@ -497,7 +512,9 @@ function twoPointText(plain) {
 function marksText(list, plane) {
   return list.map((m, i) => {
     const r = plane ? ` 면에서 ${Math.round((m.p[1] - (plane.a * m.p[0] + plane.b * m.p[2] + plane.c)) * 1000) / 10}cm` : '';
-    const dp = m.pD && m.pP ? `, 깊이−특징점 ${Math.round((m.pD[1] - m.pP[1]) * 100)}cm` : '';
+    const cm = v => (v >= 0 ? '+' : '') + Math.round(v * 100);
+    const dp = (m.pD && m.pP ? `, 깊이−특징점 ${cm(m.pD[1] - m.pP[1])}cm` : '') +
+      (m.pPl ? `, 바닥면 대비 깊이 ${m.pD ? cm(m.pD[1] - m.pPl[1]) : '-'} / 특징점 ${m.pP ? cm(m.pP[1] - m.pPl[1]) : '-'}cm` : '');
     return `${markLabel(i)} ${m.dist.toFixed(1)}m ±${m.spread.toFixed(1)}cm(${m.src}${dp})${r}`;
   }).join(' / ');
 }
@@ -527,7 +544,7 @@ function warnsOf(i, list) {
 function resultText(i, plain, list) {
   list = list || marks;
   const [up, side] = slopeLines(i), warns = warnsOf(i, list);
-  const meta = `${usedText(i)} · 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 옆 점 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)} · 중력 차이 ${gravityAngleText()}`;
+  const meta = `${usedText(i)} · 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)} · 중력 차이 ${gravityAngleText()}`;
   if (plain) return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n${trustText(i)}\n(${meta})\n(${marksText(list, i.plane)})${warns.length ? '\n' + warns.join('\n') : ''}`;
   // 화면에는 짧게(공을 가리지 않게). 점별 자세한 숫자는 [저장]한 기록에 남는다.
   return `거리 <b>${i.dist.toFixed(1)}m</b><br>${up}<br>${side}<br>${trustText(i, true)}` + warns.map(w => `<br><span class="warn">${w}</span>`).join('') +
