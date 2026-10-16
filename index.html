@@ -67,7 +67,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 6 · 판 9ff8a9d 10/16 13:09 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 6 · 판 f561a3d 10/16 13:29 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -128,15 +128,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=9ff8a9d-1016040952"></script>
+<script src="slope.js?v=f561a3d-1016042934"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 9ff8a9d-1016040952를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 f561a3d-1016042934를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = '9ff8a9d-1016040952';
+const BUILD_ID = 'f561a3d-1016042934';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -167,7 +167,7 @@ let marks = [];               // 찍은 점: { kind:'ball'|'hole'|'side', p:[x,y
 let measuring = null;         // 지금 재는 점: { kind, nx, ny, frames, ptsD, ptsP, est, ray, hitSrc }
 let resultPlane = null, resultInfo = null;
 let lastView = null;          // { proj, viewMatrix, cam }
-let lastT = 0, depthOk = false, hitState = '-', camState = '-', lostTrack = false, wantShot = false;
+let lastDepthOk = null, lastT = 0, depthOk = false, hitState = '-', camState = '-', lostTrack = false, wantShot = false;
 let still = null;             // 멈춘 화면: { photo, proj, viewMatrix, marks, plane, info, putt, stamp }
 let stimp = 2.7;              // 그린 빠르기(스팀프, m)
 try { stimp = parseFloat(localStorage.getItem('green-reader-stimp')) || 2.7; } catch {}
@@ -352,6 +352,7 @@ function onFrame(t, frame) {
   if (depth) { try { const d = depth.getDepthInMeters(0.5, 0.5); depthOk = d > NEAR_MIN && d < FAR_MAX; } catch { depthOk = false; } }
   else depthOk = false;
   if (measuring) measureStep(frame, view, depth);
+  if (depthOk !== lastDepthOk) { lastDepthOk = depthOk; if (!lostTrack) refresh(); }   // 땅 읽을 준비가 됐다/안 됐다 할 때만 글씨를 바꾼다
 
   $('debug').textContent = `깊이 ${depthOk ? '됨' : '아직'} · 특징점 ${hitState} · 사진 ${camState} · 중력 차이 ${gravityAngleText()}`;
   drawAR(dt);
@@ -366,7 +367,7 @@ function measureStep(frame, view, depth) {
   const proj = view.projectionMatrix, inv = GR.mat4Invert(proj);
   if (!inv) return;
   const cam = view.transform.matrix;
-  if (!m.ray && m.kind === 'side') {
+  if (!m.ray) {                         // 특징점 광선: 옆 점은 비교용, 공·홀은 깊이가 안 될 때 대신 쓴다
     m.ray = GR.screenRay(m.nx, m.ny, inv, cam);
     if (session.requestHitTestSource && typeof XRRay !== 'undefined') {
       const o = m.ray.o, d = m.ray.d;
@@ -377,6 +378,7 @@ function measureStep(frame, view, depth) {
     }
   }
   if (depth) {
+    m.nDepth = (m.nDepth || 0) + 1;
     const get = (nx, ny) => { if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return 0; try { return depth.getDepthInMeters(nx, ny); } catch { return 0; } };
     let sx = m.nx, sy = m.ny, dEst = 0;
     if (m.est) { const s = GR.project(m.est[0], m.est[1], m.est[2], proj, view.transform.inverse.matrix); if (s) { sx = s[0]; sy = s[1]; dEst = s[2]; } }
@@ -399,7 +401,8 @@ function measureStep(frame, view, depth) {
             if (d > NEAR_MIN && d < FAR_MAX) rp.push(GR.unproject(nx, ny, d, inv, cam));
           }
         });
-        if (rp.length >= 8) { m.ptsD.push(median3(rp)); m.est = median3(m.ptsD); }
+        if (rp.length >= 6) { m.ptsD.push(median3(rp)); m.est = median3(m.ptsD); m.nRing = (m.nRing || 0) + 1; }
+        else if (cs.length >= 3) { m.ptsD.push(median3(cs)); m.est = median3(m.ptsD); m.nCenter = (m.nCenter || 0) + 1; }   // 고리가 안 잡히면 누른 자리라도
       }
     }
   }
@@ -423,11 +426,12 @@ function spreadCm(pts, mid) {
 
 function finishMeasure(view) {
   const m = measuring; cancelMeasure();
-  const pD = m.ptsD.length >= 5 ? median3(m.ptsD) : null;
-  const pP = m.ptsP.length >= 5 ? median3(m.ptsP) : null;
+  const pD = m.ptsD.length >= 3 ? median3(m.ptsD) : null;
+  const pP = m.ptsP.length >= 3 ? median3(m.ptsP) : null;
   // 깊이 = 누른 바로 그 자리(공·홀은 그 둘레). 특징점은 광선 근처의 다른 점일 수 있어서 비교용으로 남기고, 깊이가 없을 때만 쓴다.
   const p = pD || pP;
-  if (!p) { toast('그 자리를 못 읽었어요. 조금 더 가까이 가거나, 휴대폰을 좌우로 살짝 움직인 뒤 다시 눌러 주세요', 3000); return; }
+  // 못 읽으면 왜 못 읽었는지 숫자도 같이 (캡처로 원인을 알 수 있게)
+  if (!p) { toast(`그 자리를 못 읽었어요. 휴대폰을 좌우로 살짝 움직인 뒤 다시 눌러 주세요 (깊이 ${m.nDepth || 0}/${m.frames} · 고리 ${m.nRing || 0} · 가운데 ${m.nCenter || 0} · 특징점 ${m.ptsP.length})`, 5000); return; }
   const c = view.transform.position;
   const mark = { kind: m.kind, p, src: pD ? '깊이' : '특징점', pD, pP,
     spread: spreadCm(pD ? m.ptsD : m.ptsP, p), dist: Math.hypot(p[0] - c.x, p[1] - c.y, p[2] - c.z) };
@@ -459,7 +463,8 @@ function compute() {
 const pct = p => p ? (Math.hypot(p.a, p.b) * 100).toFixed(1) + '%' : '-';
 function stepText() {
   const n = marks.length;
-  if (n === 0) return ['① 공을 눌러 주세요', '공과 홀이 화면에 다 보이게 들고, 처음 2~3초는 좌우로 살짝 움직여요'];
+  if (n === 0 && !depthOk) return ['휴대폰을 좌우로 살짝 움직여 주세요', '땅을 읽을 준비 중이에요. 준비되면 "① 공을 눌러 주세요"로 바뀌어요'];
+  if (n === 0) return ['① 공을 눌러 주세요', '공과 홀이 화면에 다 보이게 들고 공을 톡, 노란 고리가 다 찰 때까지 가만히'];
   if (n === 1) return ['② 홀(깃대 밑동)을 눌러 주세요', '홀 둘레 잔디 높이로 재요'];
   if (n === 2) return ['③ 라인 왼쪽 잔디를 눌러 주세요', '공과 홀 사이 가운데쯤, 라인에서 반 걸음~한 걸음 왼쪽'];
   if (n === 3) return ['④ 라인 오른쪽 잔디를 눌러 주세요', '③과 마주 보는 오른쪽'];
