@@ -245,7 +245,7 @@
 
   // 면 기울기(a, b)가 얼마나 흔들릴 수 있나: 최소제곱의 공분산 [var a, cov ab, var b].
   // 점이 4~5개뿐이면 어긋남(rms)만으로는 흔들림을 너무 작게 볼 수 있어서, 점 하나 오차를 sigma0(기본 1cm — 그린 기록으로 맞출 값)로 보는 몫을 2점만큼 섞는다.
-  function planeCov(pts, plane, sigma0) {
+  function planeCov(pts, plane, sigma0, nCap) {
     const n = pts.length;
     let mx = 0, mz = 0;
     for (const p of pts) { mx += p[0]; mz += p[2]; }
@@ -254,7 +254,8 @@
     for (const p of pts) { const x = p[0] - mx, z = p[2] - mz; sxx += x * x; sxz += x * z; szz += z * z; }
     const det = sxx * szz - sxz * sxz, s0 = sigma0 == null ? 0.01 : sigma0, k = 2;
     const s2 = (plane.rms * plane.rms * n + k * s0 * s0) / (Math.max(0, n - 3) + k);
-    return [s2 * szz / det, -s2 * sxz / det, s2 * sxx / det];
+    const f = nCap && n > nCap ? n / nCap : 1;   // 칸이 많아도 nCap개 점만큼만 믿는다(같은 장면에서 나온 칸들은 오차가 함께 움직임)
+    return [f * s2 * szz / det, -f * s2 * sxz / det, f * s2 * sxx / det];
   }
   // (dx, dz) 방향 기울기의 흔들림(표준편차, 0.01 = 1%)
   function slopeErr(cov, dx, dz) {
@@ -282,6 +283,39 @@
     if (!f) return null;
     f.used = used; f.cov = planeCov(keep, f);
     return f;
+  }
+
+  // ── 시험판 7: 비추는 동안 저절로 모은 점(10cm 칸)으로 공·홀 자리와 경사를 구한다 ──
+
+  // 화면을 누른 광선이 땅과 만나는 곳: 광선 가까이(수직 거리 8cm 또는 거리의 3% 안) 칸 중 가장 가까운 무리 → 그 둘레 높이 → 광선과 그 높이(+lift)가 만나는 점.
+  // lift: 공은 공 가운데 높이(2.1cm)만큼 올려서 만나게 해 공 한가운데를 고른다. 칸이 모자라면 null.
+  function locateOnRay(cells, ray, lift) {
+    const o = ray.o, d = ray.d, near = [];
+    for (const c of cells) {
+      const vx = c.x - o[0], vy = c.y - o[1], vz = c.z - o[2], t = vx * d[0] + vy * d[1] + vz * d[2];
+      if (t < 0.3) continue;
+      const px = vx - t * d[0], py = vy - t * d[1], pz = vz - t * d[2];
+      if (Math.hypot(px, py, pz) < Math.max(0.08, 0.03 * t)) near.push({ c, t });
+    }
+    if (!near.length) return null;
+    near.sort((a, b) => a.t - b.t);
+    const first = near.filter(e => e.t < near[0].t + 0.4).map(e => e.c);
+    const med = k => { const v = first.map(c => c[k]).sort((a, b) => a - b); return v[v.length >> 1]; };
+    const G = [med('x'), med('y'), med('z')];
+    const h = ringHeight(cells, G, 0.08, 0.4);
+    const y = (h == null ? G[1] : h) + (lift || 0);
+    if (Math.abs(d[1]) < 1e-3) return [G[0], y, G[2]];
+    const t = (y - o[1]) / d[1];
+    if (!(t > 0)) return [G[0], y, G[2]];
+    return [o[0] + t * d[0], y, o[2] + t * d[2]];
+  }
+  // G에서 수평으로 r0~r1 떨어진 칸들의 높이 가운데 값 (공·홀 자체는 피한다). 3칸 안 되면 null.
+  function ringHeight(cells, G, r0, r1) {
+    const ys = [];
+    for (const c of cells) { const r = Math.hypot(c.x - G[0], c.z - G[2]); if (r >= r0 && r <= r1) ys.push(c.y); }
+    if (ys.length < 3) return null;
+    ys.sort((a, b) => a - b);
+    return ys[ys.length >> 1];
   }
 
   // 점 p가 공→홀 선에서 어디쯤인가: u = 공에서 홀 쪽으로 몇 m, v = 선에서 오른쪽으로 몇 m(왼쪽이면 −)
@@ -342,7 +376,7 @@
   }
 
   const api = { mat4Invert, mat4MulVec, unproject, project, Grid, fitPlane, cellsNear, cellsInCorridor, coverage, analyze, gradientField, gradAt,
-    screenRay, fitPoints, lineOffset, puttLine, decelOf, CUP, planeCov, slopeErr, fitRobust };
+    screenRay, fitPoints, lineOffset, puttLine, decelOf, CUP, planeCov, slopeErr, fitRobust, locateOnRay, ringHeight };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GR = api;
 })(this);
