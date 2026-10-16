@@ -59,7 +59,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 3 (10/16) · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 3 · 판 8b721f2 10/16 01:44 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>① 먼저 집에서 (바닥 시험)</b>
@@ -108,11 +108,27 @@
   </div>
 </div>
 
-<script src="slope.js"></script>
+<script src="slope.js?v=8b721f2-1016014406"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
+
+// ── 새 판 확인: 올릴 때 publish.sh가 8b721f2-1016014406를 판 번호로 바꾼다.
+// GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
+const BUILD_ID = '8b721f2-1016014406';
+async function checkUpdate() {
+  if (BUILD_ID.startsWith('__') || session || starting) return;   // 컴퓨터에서 바로 열었거나 AR 중이면 안 함
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    const j = await r.json();
+    if (!j.id || j.id === BUILD_ID) return;
+    const url = location.pathname + '?v=' + encodeURIComponent(j.id);
+    if (location.pathname + location.search === url) return;       // 같은 주소로 또 새로 고치지 않게
+    location.replace(url);
+  } catch {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 
 // ── 설정 ──
 const NEAR_MIN = 0.3, NEAR_MAX = 3.5;   // 이 거리 안의 점만 쓴다(멀면 부정확)
@@ -170,6 +186,7 @@ function toast(msg, ms) {
 // 시작 단계를 화면에 남긴다 (휴대폰에서 어디서 막혔는지 캡처로 알 수 있게)
 let starting = false;
 function step(msg) { $('steps').textContent += msg + '\n'; }
+checkUpdate();
 $('go').onclick = async () => {
   if (starting) return;               // 두 번 눌러도 한 번만 (허락 창을 기다리는 중에 또 누르면 "이미 켜져 있음" 오류가 남)
   if (session) { try { await session.end(); } catch {} session = null; }
@@ -189,7 +206,7 @@ $('go').onclick = async () => {
     clearTimeout(slow);
     step('2. AR 켜짐');
     session = s;
-    s.addEventListener('end', () => { session = null; hitSources = []; overlay.classList.remove('in-ar'); showHist(); step('AR 끝남'); });
+    s.addEventListener('end', () => { session = null; hitSources = []; overlay.classList.remove('in-ar'); showHist(); step('AR 끝남'); setTimeout(checkUpdate, 300); });
     const canvas = document.createElement('canvas');
     gl = canvas.getContext('webgl', { xrCompatible: true, alpha: true });
     if (!gl) throw new Error('WebGL을 만들지 못함');
