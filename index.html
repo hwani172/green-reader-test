@@ -87,7 +87,7 @@
     </div>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 8 · 판 f287d03 10/16 17:25 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 8 · 판 d7e7369 10/16 17:50 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -170,15 +170,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=f287d03-1016082500"></script>
+<script src="slope.js?v=d7e7369-1016085018"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 f287d03-1016082500를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 d7e7369-1016085018를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = 'f287d03-1016082500';
+const BUILD_ID = 'd7e7369-1016085018';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -218,6 +218,9 @@ const DOT_N = 160;                      // 구슬 수
 
 let session = null, refSpace = null, viewerSpace = null, gl = null, glBinding = null;
 const gridP = new GR.Grid(0.1), gridD = new GR.Grid(0.1);
+// 앱 비교용(기록에만): 옛 방식(전체 평균) · 믿음 높은 점만 — 10/16 17:45 첫 앱 시험: 오르막은 맞았는데(3.4 vs 3.0) 옆이 9.2 vs 1.0
+const gridAll = new GR.Grid(0.1), gridHi = new GR.Grid(0.1);
+const APP_KEEP = 10, HI_CONF = 0.5;
 let hitSources = [], hitSetup = 'no', hitRate = [];   // hitRate: 장면마다 광선이 특징점에 맞은 비율 (바닥 무늬가 보이나)
 let marks = [];               // [공, 홀]: { kind, p:[x,y,z], src, dist }
 let pendingTap = null;        // 누른 자리 — 다음 장면에서 처리 (그 장면의 깊이도 쓸 수 있게)
@@ -363,7 +366,7 @@ $('ar').addEventListener('click', e => {
 });
 function resetAll(clearPoints) {
   marks = []; pendingTap = null; wantShot = false;
-  if (clearPoints) { gridP.clear(); gridD.clear(); hitRate = []; Object.assign(hitDiag, { n: 0, flat: 0, same: 0, ns: 0 }); scanStart = performance.now(); goodSince = 0; prevCam = null; fastRate = []; }
+  if (clearPoints) { gridP.clear(); gridD.clear(); gridAll.clear(); gridHi.clear(); hitRate = []; Object.assign(hitDiag, { n: 0, flat: 0, same: 0, ns: 0 }); scanStart = performance.now(); goodSince = 0; prevCam = null; fastRate = []; }
   dots.forEach(d => { d.life = 0; d.on = false; });
   lastHudT = 0; refresh();
 }
@@ -496,7 +499,9 @@ function samplePoints(pts, view) {
     if (pts[i + 3] < APP_CONF) continue;
     const x = pts[i], y = pts[i + 1], z = pts[i + 2], d = Math.hypot(x - c.x, y - c.y, z - c.z);
     if (d < NEAR_MIN || d > HIT_MAX) continue;
-    gridP.add(x, y, z, frameNo, d); n++; ys.push(y);
+    gridP.add(x, y, z, frameNo, d, APP_KEEP); gridAll.add(x, y, z, frameNo, d);
+    if (pts[i + 3] >= HI_CONF) gridHi.add(x, y, z, frameNo, d, APP_KEEP);
+    n++; ys.push(y);
   }
   // 진단(크롬 때와 같은 숫자): 같은 높이 비율 — 진짜 점이면 낮아야 함
   if (ys.length >= 4) { const m = ys.slice().sort((a, b) => a - b)[ys.length >> 1]; hitDiag.same += ys.filter(y => Math.abs(y - m) < 0.0002).length; hitDiag.ns += ys.length; hitDiag.n += ys.length; }
@@ -609,6 +614,12 @@ function compute() {
   info.planeP = planeP; info.planeD = planeD; info.plane = plane;
   const sgn = f => f ? { along: (f.a * ux + f.b * uz) * 100, side: (f.a * -uz + f.b * ux) * 100 } : null;   // 옆은 오른쪽이 높으면 +
   info.sgnP = sgn(planeP); info.sgnD = sgn(planeD);
+  // 앱 비교(기록용): 같은 띠에서 다른 방식으로 맞추면 얼마인가 — 어느 쪽이 정답 재기에 가까운지 보려고
+  if (session && session.app) {
+    const alt = cs => { const c = cs.filter(away); const f = c.length >= MIN_CELLS_P ? GR.fitPlane(c) : null; return f ? { ...sgn(f), n: c.length, rms: f.rms } : { n: c.length }; };
+    const band = g => GR.cellsInCorridor(g.cells(2, 0.05, 2), b, h, BAND, 0.5);
+    info.alt = { all: alt(band(gridAll)), hi: alt(band(gridHi)), near: alt(cP.filter(c => c.d < 1.8)) };
+  }
   info.diag = { ...hitDiag };
   info.cells = used.slice(0, 400).map(c => [c.x, c.y, c.z]);
   // 구간별 경사 (공 쪽 · 가운데 · 홀 쪽 1/3씩) — 정답 재기(한 자리)와 같은 자리끼리 비교하려고 (10/16 15:49 아스팔트: 카메라 평평 vs 정답 내리막 3.6%)
@@ -697,7 +708,9 @@ function recordText(i, list) {
     (i.diag && i.diag.n ? ` · 특징점 진단: 정확히 수평 자세 ${Math.round(i.diag.flat / i.diag.n * 100)}% · 같은 높이 ${i.diag.ns ? Math.round(i.diag.same / i.diag.ns * 100) : '-'}%` : '') +
     ` · 중력 차이 ${gravityAngleText()}` +
     (i.upDiff ? ` · 센서−AR 위(휴대폰 기준) 좌우 ${pctS(i.upDiff[0])} 앞뒤 ${pctS(i.upDiff[2])}` : '') +
-    (i.sensor ? ` · 센서 위 기준이면 오르막 ${pctS(i.sensor.along / 100)} · 옆 ${pctS(i.sensor.side / 100)}(오른쪽이 높으면 +)` : '');
+    (i.sensor ? ` · 센서 위 기준이면 오르막 ${pctS(i.sensor.along / 100)} · 옆 ${pctS(i.sensor.side / 100)}(오른쪽이 높으면 +)` : '') +
+    (i.alt ? ' · 앱 비교(오른쪽이 높으면 +): ' + [['옛 방식(전체 평균)', i.alt.all], ['믿음 높은 점만', i.alt.hi], ['1.8m 안 점만', i.alt.near]]
+      .map(([k, a]) => `${k} ${a.along != null ? `오르막 ${pctS(a.along / 100)} 옆 ${pctS(a.side / 100)} ±${(a.rms * 100).toFixed(1)}cm` : '-'}(${a.n}칸)`).join(' / ') : '');
   const pts = list.map((m, k) => `${markLabel(k)} ${m.dist.toFixed(1)}m(${m.src})`).join(' / ');
   const segs = (i.segs || []).map((g, k) => `${['공 쪽', '가운데', '홀 쪽'][k]} ${g ? `오르막 ${pctS(g.along / 100)} · 옆 ${pctS(g.side / 100)}(${g.n}칸)` : '점 모자람'}`).join(' / ');
   return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n${trustText(i)}\n(${calibLine(i)})\n(구간별(보정 전, 옆은 오른쪽이 높으면 +): ${segs})\n(${meta})\n(${pts})${warns.length ? '\n' + warns.join('\n') : ''}`;

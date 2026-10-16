@@ -68,11 +68,13 @@
   }
   // frame: 몇 번째 장면에서 잡혔나(같은 장면에서 여러 번 맞은 것은 한 번으로 친다 → 여러 장면에서 거듭 본 칸만 믿으려고),
   // dist: 카메라에서 얼마나 멀었나(멀수록 덜 믿는다). 둘 다 없어도 된다.
-  Grid.prototype.add = function (x, y, z, frame, dist) {
+  // keep: 칸마다 최근 이만큼만 기억(옛 값은 조금씩 잊음) — 앱(ARCore)은 같은 점의 위치를 갈수록 고쳐 주므로 처음 엉성한 값을 오래 끌지 않게
+  Grid.prototype.add = function (x, y, z, frame, dist, keep) {
     const s = this.size;
     const key = Math.round(x / s) + ',' + Math.round(z / s);
     let c = this.map.get(key);
     if (!c) { c = { sx: 0, sy: 0, sz: 0, syy: 0, n: 0, sd: 0, nf: 0, lf: null }; this.map.set(key, c); }
+    if (keep && c.n >= keep) { const k = (keep - 1) / c.n; c.sx *= k; c.sy *= k; c.sz *= k; c.syy *= k; c.sd *= k; c.n *= k; }
     c.sx += x; c.sy += y; c.sz += z; c.syy += y * y; c.n++; c.sd += dist || 0;
     if (frame == null || frame !== c.lf) { c.nf++; c.lf = frame; }
   };
