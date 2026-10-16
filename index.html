@@ -59,7 +59,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 3 · 판 a43fe4f 10/16 10:47 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 3 · 판 8fb3c43 10/16 10:53 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>① 먼저 집에서 (바닥 시험)</b>
@@ -108,15 +108,15 @@
   </div>
 </div>
 
-<script src="slope.js?v=a43fe4f-1016014722"></script>
+<script src="slope.js?v=8fb3c43-1016015319"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 a43fe4f-1016014722를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 8fb3c43-1016015319를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = 'a43fe4f-1016014722';
+const BUILD_ID = '8fb3c43-1016015319';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting) return;   // 컴퓨터에서 바로 열었거나 AR 중이면 안 함
   try {
