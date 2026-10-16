@@ -78,7 +78,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 7-1 · 판 c67cf87 10/16 14:29 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 7-2 · 판 362d07a 10/16 14:36 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -154,15 +154,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=c67cf87-1016052950"></script>
+<script src="slope.js?v=362d07a-1016053643"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 c67cf87-1016052950를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 362d07a-1016053643를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = 'c67cf87-1016052950';
+const BUILD_ID = '362d07a-1016053643';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -209,6 +209,10 @@ let still = null;             // 멈춘 화면: { photo, proj, viewMatrix, marks
 let stimp = 2.7;              // 그린 빠르기(스팀프, m)
 try { stimp = parseFloat(localStorage.getItem('green-reader-stimp')) || 2.7; } catch {}
 let upEma = null;             // 휴대폰 센서로 본 '위' 방향(세계 좌표) — AR의 위(y)와 맞는지 확인용
+// 휴대폰 기준(가로 x = 오른쪽, z = 화면에서 나를 향함)으로 본 '센서의 위 − AR의 위'. 10/16 14:33 기록에서 카메라 옆 경사 오차(−0.9%)가
+// 정답 재기의 휴대폰 치우침 좌우(−0.9%)와 같았다 → AR이 센서 치우침을 그대로 물려받는지 확인하려고 기록에 남긴다.
+//   이 값 x가 0 근처면 AR이 센서와 같은 '위'를 씀(→ 센서 치우침만큼 옆 경사가 틀림), 정답 재기의 좌우 치우침과 비슷하면 AR은 치우침을 고쳐 쓰는 것.
+let upDiffEma = null;
 const dots = Array.from({ length: DOT_N }, () => ({ x: 0, z: 0, life: 0, max: 1, on: false }));
 const markLabel = i => i === 0 ? '공' : '홀';
 
@@ -382,6 +386,8 @@ function onFrame(t, frame) {
                m[1] * upDev[0] + m[5] * upDev[1] + m[9] * upDev[2],
                m[2] * upDev[0] + m[6] * upDev[1] + m[10] * upDev[2]];
     upEma = upEma ? upEma.map((v, i) => v * 0.98 + w[i] * 0.02) : w;
+    const d = [upDev[0] - m[1], upDev[1] - m[5], upDev[2] - m[9]];   // AR의 위(세계 y)를 휴대폰 기준으로 = (m[1], m[5], m[9])
+    upDiffEma = upDiffEma ? upDiffEma.map((v, i) => v * 0.98 + d[i] * 0.02) : d;
   }
 
   if (wantShot) { wantShot = false; freeze(view); return; }
@@ -560,7 +566,8 @@ function warnsOf(i, list) {
 function recordText(i, list) {
   const [up, side] = slopeLines(i), warns = warnsOf(i, list);
   const meta = `${i.src} 칸 ${i.nUsed}/${i.nAll}개 씀 (특징점 ${i.nP} · 깊이 ${i.nD}) · 라인 비춤 ${Math.round(i.cover * 100)}% · 어긋남 ±${(i.rms * 100).toFixed(1)}cm` +
-    ` · 특징점으로만 ${pct(i.planeP)} / 깊이로만 ${pct(i.planeD)} · 중력 차이 ${gravityAngleText()}`;
+    ` · 특징점으로만 ${pct(i.planeP)} / 깊이로만 ${pct(i.planeD)} · 중력 차이 ${gravityAngleText()}` +
+    (i.upDiff ? ` · 센서−AR 위(휴대폰 기준) 좌우 ${pctS(i.upDiff[0])} 앞뒤 ${pctS(i.upDiff[2])}` : '');
   const pts = list.map((m, k) => `${markLabel(k)} ${m.dist.toFixed(1)}m(${m.src})`).join(' / ');
   return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n${trustText(i)}\n(${meta})\n(${pts})${warns.length ? '\n' + warns.join('\n') : ''}`;
 }
@@ -593,6 +600,7 @@ function freeze(view) {
   let photo = null;
   try { photo = grabCamera(view); camState = photo ? '됨' : camState; } catch (e) { camState = '안 됨(' + (e && e.message || e) + ')'; }
   const { plane, info } = computed;
+  info.upDiff = upDiffEma ? upDiffEma.slice() : null;
   still = { photo, proj: Array.from(view.projectionMatrix), viewMatrix: Array.from(view.transform.inverse.matrix),
     marks: [{ ...marks[0], p: info.ballP }, { ...marks[1], p: info.holeP }], plane, info, stamp: new Date() };
   newPutt();
