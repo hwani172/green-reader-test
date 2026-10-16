@@ -67,7 +67,7 @@
     <p id="support"></p>
     <button class="big" id="go" disabled>카메라 켜고 시작</button>
     <pre id="steps"></pre>
-    <p class="sub" id="ver">시험판 5 · 판 f0c2386 10/16 12:45 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
+    <p class="sub" id="ver">시험판 6 · 판 9ff8a9d 10/16 13:09 · 카카오톡 등 앱 안이 아니라 <b>크롬 앱</b>에서 열어 주세요</p>
 
     <div class="card">
       <b>그린에서</b>
@@ -77,7 +77,8 @@
         <li><b>③ 라인 왼쪽 잔디</b> → <b>④ 라인 오른쪽 잔디</b>(공과 홀 사이 가운데쯤, 반 걸음~한 걸음 옆). 여기까지는 꼭 찍어요.</li>
         <li>그다음은 <b>원하는 곳을 더</b> 찍어도 돼요. 많을수록 정확해요.</li>
         <li>다 찍었으면 <b>[저장]</b> → 화면이 멈추고 <b>경사·구슬 지도·유도선</b>(어디를 보고 얼마나 세게)이 나와요.</li>
-        <li>한 점 찍을 때마다 <b>1초쯤 가만히</b>. 잘못 찍으면 [한 점 취소].</li>
+        <li>한 점 찍을 때마다 <b>2초쯤 가만히</b>(노란 고리가 다 찰 때까지). 잘못 찍으면 [한 점 취소].</li>
+        <li>경사 옆의 <b>±</b>는 "이만큼 틀릴 수 있다"는 뜻이에요. ±가 크면 점을 더 찍어 주세요. 혼자 크게 튀는 점은 앱이 알아서 빼요(회색 ×).</li>
       </ol>
     </div>
     <div class="card">
@@ -127,15 +128,15 @@
   <div id="toast"></div>
 </div>
 
-<script src="slope.js?v=f0c2386-1016034545"></script>
+<script src="slope.js?v=9ff8a9d-1016040952"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const overlay = $('overlay');
 
-// ── 새 판 확인: 올릴 때 publish.sh가 f0c2386-1016034545를 판 번호로 바꾼다.
+// ── 새 판 확인: 올릴 때 publish.sh가 9ff8a9d-1016040952를 판 번호로 바꾼다.
 // GitHub Pages는 10분 동안 옛 화면을 줄 수 있어서, 열릴 때·다시 볼 때 version.json을 새로 받아 보고 다르면 스스로 새로 고친다.
-const BUILD_ID = 'f0c2386-1016034545';
+const BUILD_ID = '9ff8a9d-1016040952';
 async function checkUpdate() {
   if (BUILD_ID.startsWith('__') || session || starting || still) return;   // 컴퓨터에서 바로 열었거나 AR·결과 화면 중이면 안 함
   try {
@@ -152,7 +153,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chec
 // ── 설정 ──
 const NEAR_MIN = 0.3, FAR_MAX = 10;     // 찍은 점은 이 거리 안만 쓴다
 const FAR_WARN = 6;                     // 이보다 먼 점은 "멀어서 부정확할 수 있음" 표시
-const MEASURE_FRAMES = 24;              // 한 점을 재는 장면 수 (약 1초)
+const MEASURE_FRAMES = 60;              // 한 점을 재는 장면 수 (약 2초) — 시험판 5는 1초였는데 점마다 경사가 흔들려서 늘림(10/16)
 const MIN_MARKS = 4, MAX_MARKS = 20;    // 공·홀·옆 2개는 꼭, 그 뒤로는 원하는 만큼
 const RING = [0.10, 0.16];              // 공·홀을 누르면 그 둘레 이 반지름(m)의 잔디 높이를 잰다 (공 지름 4.3cm, 홀 지름 10.8cm)
 const SIDE_MIN = 0.25;                  // 옆 점이 라인에서 이만큼(m)은 떨어져야 옆 경사가 보인다
@@ -274,7 +275,7 @@ $('ar').addEventListener('click', e => {
   const r = overlay.getBoundingClientRect();
   const kind = marks.length === 0 ? 'ball' : marks.length === 1 ? 'hole' : 'side';
   measuring = { kind, nx: (e.clientX - r.left) / r.width, ny: (e.clientY - r.top) / r.height, frames: 0, ptsD: [], ptsP: [], est: null, ray: null, hitSrc: null };
-  toast('재는 중… 1초만 가만히', 1100);
+  toast('재는 중… 2초만 가만히', 1800);
 });
 function cancelMeasure() {
   if (measuring && measuring.hitSrc) { try { measuring.hitSrc.cancel(); } catch {} }
@@ -441,10 +442,13 @@ function compute() {
   resultPlane = resultInfo = null;
   dots.forEach(d => { d.on = false; });
   if (marks.length < MIN_MARKS) return;
-  const plane = GR.fitPoints(marks.map(m => m.p));
+  // 시험판 6: 혼자 크게 튀는 점은 빼고 맞춘다(used), 기울기가 얼마나 흔들릴 수 있는지도 같이(cov → ±)
+  const plane = GR.fitRobust(marks.map(m => m.p));
   if (!plane) return;
   const info = GR.analyze(ball(), hole(), plane);
-  info.rms = plane.rms; info.n = marks.length;
+  info.rms = plane.rms; info.n = marks.length; info.used = plane.used;
+  const b = ball(), h = hole(), L = Math.hypot(h[0] - b[0], h[2] - b[2]), ux = (h[0] - b[0]) / L, uz = (h[2] - b[2]) / L;
+  info.errAlong = GR.slopeErr(plane.cov, ux, uz) * 100; info.errSide = GR.slopeErr(plane.cov, -uz, ux) * 100;
   info.sides = marks.slice(2).map(m => GR.lineOffset(ball(), hole(), m.p).v);
   // 비교용: 옆 점들을 깊이로만 / 특징점으로만 잰 경우 (공·홀은 늘 둘레 깊이)
   const alt = k => marks.slice(2).every(m => m[k]) ? GR.fitPoints(marks.map((m, i) => i < 2 ? m.p : m[k])) : null;
@@ -493,13 +497,20 @@ function marksText(list, plane) {
   }).join(' / ');
 }
 function slopeLines(i) {
+  const ea = ` (±${i.errAlong.toFixed(1)}%)`, es = ` (±${i.errSide.toFixed(1)}%)`;
   const flat = Math.abs(i.alongPct) < 0.3;
-  const up = flat ? '거의 평평' : (i.alongPct > 0
+  const up = (flat ? '거의 평평' : (i.alongPct > 0
     ? `오르막 ${i.alongPct.toFixed(1)}% · 홀이 ${Math.round(i.rise * 100)}cm 높음`
-    : `내리막 ${(-i.alongPct).toFixed(1)}% · 홀이 ${Math.round(-i.rise * 100)}cm 낮음`);
-  const side = i.sidePct < 0.3 ? '옆 경사 거의 없음'
-    : `옆 경사 ${i.sidePct.toFixed(1)}% · ${i.breakTo === 'right' ? '오른쪽으로 휨 (왼쪽이 높음)' : '왼쪽으로 휨 (오른쪽이 높음)'}`;
+    : `내리막 ${(-i.alongPct).toFixed(1)}% · 홀이 ${Math.round(-i.rise * 100)}cm 낮음`)) + ea;
+  const side = (i.sidePct < 0.3 ? '옆 경사 거의 없음'
+    : `옆 경사 ${i.sidePct.toFixed(1)}% · ${i.breakTo === 'right' ? '오른쪽으로 휨 (왼쪽이 높음)' : '왼쪽으로 휨 (오른쪽이 높음)'}`) + es;
   return [up, side];
+}
+// 믿을 만한 정도: ±가 0.3% 안이면 믿을 만함, 0.7% 안이면 보통, 넘으면 흔들림 큼
+function trustText(i, html) {
+  const e = Math.max(i.errAlong, i.errSide);
+  const t = e <= 0.3 ? ['믿을 만함', '#8fe39a'] : e <= 0.7 ? ['보통 — 점을 더 찍으면 좋아요', '#ffd34d'] : ['흔들림 큼 — 점을 더 찍어 주세요', '#ff8a7a'];
+  return html ? `<span style="color:${t[1]};font-weight:700">● ${t[0]}</span>` : t[0];
 }
 function warnsOf(i, list) {
   const w = [];
@@ -511,11 +522,26 @@ function warnsOf(i, list) {
 function resultText(i, plain, list) {
   list = list || marks;
   const [up, side] = slopeLines(i), warns = warnsOf(i, list);
-  const meta = `점 ${i.n}개 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 옆 점 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)} · 중력 차이 ${gravityAngleText()}`;
-  if (plain) return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n(${meta})\n(${marksText(list, i.plane)})${warns.length ? '\n' + warns.join('\n') : ''}`;
+  const meta = `${usedText(i)} · 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 옆 점 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)} · 중력 차이 ${gravityAngleText()}`;
+  if (plain) return `거리 ${i.dist.toFixed(1)}m\n${up}\n${side}\n${trustText(i)}\n(${meta})\n(${marksText(list, i.plane)})${warns.length ? '\n' + warns.join('\n') : ''}`;
   // 화면에는 짧게(공을 가리지 않게). 점별 자세한 숫자는 [저장]한 기록에 남는다.
-  return `거리 <b>${i.dist.toFixed(1)}m</b><br>${up}<br>${side}` + warns.map(w => `<br><span class="warn">${w}</span>`).join('') +
-    `<br><span class="meta">점 ${i.n}개 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)}</span>`;
+  return `거리 <b>${i.dist.toFixed(1)}m</b><br>${up}<br>${side}<br>${trustText(i, true)}` + warns.map(w => `<br><span class="warn">${w}</span>`).join('') +
+    `<br><span class="meta">${usedText(i)} · 어긋남 ±${(i.rms * 100).toFixed(1)}cm · 깊이로만 ${pct(i.planeD)} / 특징점으로만 ${pct(i.planeP)}</span>`;
+}
+function usedText(i) {
+  const out = i.used.map((u, k) => u ? '' : markLabel(k)).filter(Boolean);
+  return `점 ${i.n}개` + (out.length ? ` 중 ${i.n - out.length}개 씀 (튀어서 뺀 점: ${out.join(' ')})` : '');
+}
+// 경사의 ± 만큼 옆 경사를 바꿔 보면 겨냥이 어디서 어디까지 달라지나 (컵, 오른쪽 +)
+function puttRange(list, plane, i) {
+  const b = list[0].p, h = list[1].p, L = Math.hypot(h[0] - b[0], h[2] - b[2]), rx = -(h[2] - b[2]) / L, rz = (h[0] - b[0]) / L, e = i.errSide / 100;
+  const r = [-1, 1].map(sg => GR.puttLine(b, h, { a: plane.a + sg * rx * e, b: plane.b + sg * rz * e, c: plane.c }, stimp)).filter(Boolean).map(p => p.cups);
+  return r.length === 2 ? [Math.min(...r), Math.max(...r)] : null;
+}
+function rangeText(r) {
+  if (!r) return '';
+  const f = c => Math.abs(c) < 0.25 ? '가운데' : `${c > 0 ? '오른쪽' : '왼쪽'} ${Math.abs(c).toFixed(1)}컵`;
+  return `경사 ±를 넣으면 홀 ${f(r[0])} ~ ${f(r[1])}`;
 }
 // 유도선 안내: 어디를 보고, 얼마나 세게
 function aimText(pt) {
@@ -533,8 +559,10 @@ function freeze(view) {
   still = { photo, proj: Array.from(view.projectionMatrix), viewMatrix: Array.from(view.transform.inverse.matrix),
     marks: marks.map(m => Object.assign({}, m)), plane: resultPlane, info, stamp: new Date() };
   still.putt = GR.puttLine(still.marks[0].p, still.marks[1].p, still.plane, stimp);
+  still.range = puttRange(still.marks, still.plane, info);
   const stamp = still.stamp.toLocaleString('ko-KR', { hour12: false });
-  const text = `[${stamp}] 점 ${info.n}개 · 그린 빠르기 ${stimp.toFixed(1)}\n` + resultText(info, true, still.marks) + '\n유도선: ' + aimText(still.putt) + `\n(사진 ${camState})`;
+  const text = `[${stamp}] 점 ${info.n}개 · 그린 빠르기 ${stimp.toFixed(1)}\n` + resultText(info, true, still.marks) + '\n유도선: ' + aimText(still.putt) +
+    (still.range ? ` (${rangeText(still.range)})` : '') + `\n(사진 ${camState})`;
   const list = loadHist(); list.unshift({ t: still.stamp.getTime(), text }); saveHist(list.slice(0, 50));
   session.end();              // → onSessionEnd → showStill()
 }
@@ -578,6 +606,7 @@ function grabCamera(view) {
 
 // ── 멈춘 화면 ──
 function showStill() {
+  $('stillTop').classList.add('mini');      // 처음엔 접어서 홀이 보이게 (눌러서 펼치기)
   showStillText();
   dots.forEach(d => { d.on = false; });
   lastT = 0; requestAnimationFrame(stillLoop);
@@ -586,8 +615,8 @@ function showStillText() {
   document.querySelectorAll('#speedRow button').forEach(b => b.classList.toggle('on', Math.abs(parseFloat(b.dataset.s) - stimp) < 0.01));
   const i = still.info, [up, side] = slopeLines(i);
   const mini = $('stillTop').classList.contains('mini');
-  $('stillTop').innerHTML = `<div class="aim"><span class="fold">${mini ? '펼치기 ▼' : '접기 ▲'}</span>${aimText(still.putt).replace(' · ', '<br>')}</div>` +
-    `<div class="more">거리 <b>${i.dist.toFixed(1)}m</b> · ${up}<br>${side}` +
+  $('stillTop').innerHTML = `<div class="aim"><span class="fold">${mini ? '펼치기 ▼' : '접기 ▲'}</span>${aimText(still.putt).replace(' · ', '<br>')}<br><span style="font-size:15px">${trustText(i, true)}</span></div>` +
+    `<div class="more">${still.range ? `<span class="meta">${rangeText(still.range)}</span><br>` : ''}거리 <b>${i.dist.toFixed(1)}m</b> · ${up}<br>${side}` +
     (still.photo ? '' : '<br><span class="meta">이 휴대폰에선 카메라 사진을 못 남겨서 검은 바탕에 그렸어요</span>') +
     warnsOf(i, still.marks).map(w => `<br><span class="warn">${w}</span>`).join('') + '</div>';
 }
@@ -600,7 +629,7 @@ function stillLoop(t) {
 document.querySelectorAll('#speedRow button').forEach(b => b.onclick = () => {
   stimp = parseFloat(b.dataset.s);
   try { localStorage.setItem('green-reader-stimp', String(stimp)); } catch {}
-  if (still) { still.putt = GR.puttLine(still.marks[0].p, still.marks[1].p, still.plane, stimp); showStillText(); }
+  if (still) { still.putt = GR.puttLine(still.marks[0].p, still.marks[1].p, still.plane, stimp); still.range = puttRange(still.marks, still.plane, still.info); showStillText(); }
 });
 $('stillTop').onclick = () => { $('stillTop').classList.toggle('mini'); if (still) showStillText(); };
 function leaveStill() { still = null; overlay.classList.remove('show-still'); showHist(); }
@@ -703,15 +732,18 @@ function drawScene(cv, V, list, plane, info, dt, photo, putt) {
   }
 
   const color = i => i === 0 ? '#ffffff' : i === 1 ? '#222222' : '#ffd34d';
-  list.forEach((m, i) => marker(ctx, P(...m.p), color(i), markLabel(i), i < 2 ? 12 : 8));
+  list.forEach((m, i) => {
+    const out = info && info.used && !info.used[i];          // 튀어서 계산에서 뺀 점: 회색 ×
+    marker(ctx, P(...m.p), out ? '#888888' : color(i), markLabel(i) + (out ? '×' : ''), i < 2 ? 12 : 8);
+  });
 
   // 재는 중인 자리: 노란 고리
   if (measuring && V === lastView) {
     const s = measuring.est ? P(...measuring.est) : [measuring.nx * W, measuring.ny * H];
     if (s) {
-      const r = 14 + 6 * Math.sin(lastT / 120);
-      ctx.beginPath(); ctx.arc(s[0], s[1], r, 0, Math.PI * 2);
-      ctx.lineWidth = 3; ctx.strokeStyle = '#ffd34d'; ctx.stroke();
+      const r = 18, k = Math.min(1, measuring.frames / MEASURE_FRAMES);   // 고리가 다 차면 다 잰 것
+      ctx.beginPath(); ctx.arc(s[0], s[1], r, 0, Math.PI * 2); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(s[0], s[1], r, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.lineWidth = 5; ctx.strokeStyle = '#ffd34d'; ctx.stroke();
     }
   }
 }

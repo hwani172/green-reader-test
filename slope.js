@@ -241,6 +241,49 @@
     return { a, b, c, rms: Math.sqrt(ss / n), n };
   }
 
+  // ── 시험판 6: 이상한 점 빼기 + 믿을 만한 정도(±) ──
+
+  // 면 기울기(a, b)가 얼마나 흔들릴 수 있나: 최소제곱의 공분산 [var a, cov ab, var b].
+  // 점이 4~5개뿐이면 어긋남(rms)만으로는 흔들림을 너무 작게 볼 수 있어서, 점 하나 오차를 sigma0(기본 1cm — 그린 기록으로 맞출 값)로 보는 몫을 2점만큼 섞는다.
+  function planeCov(pts, plane, sigma0) {
+    const n = pts.length;
+    let mx = 0, mz = 0;
+    for (const p of pts) { mx += p[0]; mz += p[2]; }
+    mx /= n; mz /= n;
+    let sxx = 0, sxz = 0, szz = 0;
+    for (const p of pts) { const x = p[0] - mx, z = p[2] - mz; sxx += x * x; sxz += x * z; szz += z * z; }
+    const det = sxx * szz - sxz * sxz, s0 = sigma0 == null ? 0.01 : sigma0, k = 2;
+    const s2 = (plane.rms * plane.rms * n + k * s0 * s0) / (Math.max(0, n - 3) + k);
+    return [s2 * szz / det, -s2 * sxz / det, s2 * sxx / det];
+  }
+  // (dx, dz) 방향 기울기의 흔들림(표준편차, 0.01 = 1%)
+  function slopeErr(cov, dx, dz) {
+    return Math.sqrt(Math.max(0, dx * dx * cov[0] + 2 * dx * dz * cov[1] + dz * dz * cov[2]));
+  }
+  // 점이 5개 이상이면, 하나씩 빼고 맞춘 면에서 혼자 크게(2cm 넘게, 나머지 어긋남의 3배 넘게) 벗어난 점을 뺀다. 4개는 남긴다.
+  // 돌려줌: 면 + used(점마다 썼나) + cov
+  function fitRobust(pts) {
+    const used = pts.map(() => true);
+    for (;;) {
+      const idx = []; used.forEach((u, i) => { if (u) idx.push(i); });
+      if (idx.length <= 4) break;
+      let worst = -1, wr = 0, wrms = 0;
+      for (const i of idx) {
+        const f = fitPoints(idx.filter(j => j !== i).map(j => pts[j]));
+        if (!f) continue;
+        const r = Math.abs(pts[i][1] - (f.a * pts[i][0] + f.b * pts[i][2] + f.c));
+        if (r > wr) { wr = r; worst = i; wrms = f.rms; }
+      }
+      if (worst < 0 || wr < Math.max(0.02, 3 * wrms)) break;
+      used[worst] = false;
+    }
+    const keep = pts.filter((p, i) => used[i]);
+    const f = fitPoints(keep);
+    if (!f) return null;
+    f.used = used; f.cov = planeCov(keep, f);
+    return f;
+  }
+
   // 점 p가 공→홀 선에서 어디쯤인가: u = 공에서 홀 쪽으로 몇 m, v = 선에서 오른쪽으로 몇 m(왼쪽이면 −)
   function lineOffset(ball, hole, p) {
     const dx = hole[0] - ball[0], dz = hole[2] - ball[2], L = Math.hypot(dx, dz) || 1;
@@ -299,7 +342,7 @@
   }
 
   const api = { mat4Invert, mat4MulVec, unproject, project, Grid, fitPlane, cellsNear, cellsInCorridor, coverage, analyze, gradientField, gradAt,
-    screenRay, fitPoints, lineOffset, puttLine, decelOf, CUP };
+    screenRay, fitPoints, lineOffset, puttLine, decelOf, CUP, planeCov, slopeErr, fitRobust };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GR = api;
 })(this);
